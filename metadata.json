@@ -1,0 +1,7 @@
+{
+  "name": "Boy and a Scanner",
+  "description": "A clever radio frequency discovery tool that uses the RadioReference database and AI to find local public safety frequencies.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
