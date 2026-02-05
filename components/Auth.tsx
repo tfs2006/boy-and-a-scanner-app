@@ -1,13 +1,9 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../services/supabaseClient';
-import { Shield, Radio, Lock, Activity, Zap, Terminal, Map, BookOpen, Ghost } from 'lucide-react';
+import { Shield, Radio, Lock, Activity, Zap, Terminal, Map, BookOpen } from 'lucide-react';
 
-interface AuthProps {
-  onGuestLogin: () => void;
-}
-
-export const Auth: React.FC<AuthProps> = ({ onGuestLogin }) => {
+export const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -140,13 +136,6 @@ export const Auth: React.FC<AuthProps> = ({ onGuestLogin }) => {
               <span className="font-sans">Access the Network</span>
             </button>
 
-            <button
-                onClick={onGuestLogin}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all border border-slate-700"
-            >
-                <Ghost className="w-4 h-4" />
-                <span className="text-sm">Initialize Guest Session</span>
-            </button>
           </div>
         </div>
         

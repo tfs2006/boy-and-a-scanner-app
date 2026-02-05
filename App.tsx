@@ -14,7 +14,6 @@ import { generateCSV } from './utils/csvGenerator';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [isGuest, setIsGuest] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
 
   const [mode, setMode] = useState<'scan' | 'trip'>('scan');
@@ -86,10 +85,8 @@ function App() {
   useEffect(() => {
     if (session) {
         checkConnection();
-    } else if (isGuest) {
-      setCacheStatus('offline');
     }
-  }, [session, isGuest]);
+  }, [session]);
 
   const checkConnection = async () => {
     if (!supabase) {
@@ -121,12 +118,6 @@ function App() {
   };
 
   const handleSignOut = async () => {
-    if (isGuest) {
-        setIsGuest(false);
-        setResult(null);
-        setSearchQuery('');
-        return;
-    }
     if (supabase) {
         await supabase.auth.signOut();
         setResult(null);
@@ -302,9 +293,9 @@ function App() {
       );
   }
 
-  // If not logged in AND not a guest, show auth
-  if (!session && !isGuest) {
-      return <Auth onGuestLogin={() => setIsGuest(true)} />;
+  // If not logged in, show auth
+  if (!session) {
+      return <Auth />;
   }
 
   return (
@@ -396,7 +387,7 @@ function App() {
                 <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-3 py-1.5 gap-3">
                     <button 
                         onClick={handleSignOut}
-                        title={isGuest ? "Exit Guest Mode" : "Sign Out"}
+                        title="Sign Out"
                         className="text-slate-400 hover:text-red-400 transition-colors"
                     >
                         <LogOut className="w-4 h-4" />
