@@ -2,6 +2,7 @@
 import { SearchResponse, ScanResult, TripResult, ServiceType } from "../types";
 import { sanitizeForPrompt } from "../utils/security";
 import { supabase } from "./supabaseClient";
+import { fetchFromRadioReference, RRCredentials } from "./rrApi";
 
 // --- Caching Helpers ---
 
@@ -90,7 +91,7 @@ export async function getDatabaseStats(): Promise<number> {
 
 // --- Main Services (Using Secure Serverless API Routes) ---
 
-export const searchFrequencies = async (locationQuery: string, serviceTypes: ServiceType[] = ['Police', 'Fire', 'EMS']): Promise<SearchResponse> => {
+export const searchFrequencies = async (locationQuery: string, serviceTypes: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials): Promise<SearchResponse> => {
   const safeLocation = sanitizeForPrompt(locationQuery);
   const sortedServices = [...serviceTypes].sort().join('-');
   const cacheKey = `loc_${safeLocation}_[${sortedServices}]`.toLowerCase().replace(/\s+/g, '');
@@ -102,9 +103,28 @@ export const searchFrequencies = async (locationQuery: string, serviceTypes: Ser
     return { data: cached.data, groundingChunks: cached.groundingChunks, rawText: "Retrieved from Cache" };
   }
 
-  console.log(`Cache Miss for ${safeLocation}. Calling API...`);
+  console.log(`Cache Miss for ${safeLocation}.`);
 
-  // Call the secure serverless API route (API key stays on server)
+  // --- Try RadioReference Direct API first (ZIP codes only, requires RR credentials) ---
+  const isZip = /^\d{5}$/.test(safeLocation.trim());
+  if (isZip && rrCredentials) {
+    try {
+      console.log(`Attempting RadioReference Direct API for ZIP ${safeLocation}...`);
+      const rrData = await fetchFromRadioReference(safeLocation.trim(), rrCredentials, serviceTypes);
+      
+      if (rrData && (rrData.agencies?.length > 0 || rrData.trunkedSystems?.length > 0)) {
+        // Save to cache
+        await saveToCache(cacheKey, rrData, null);
+        return { data: rrData, groundingChunks: null, rawText: "Retrieved from RadioReference API" };
+      }
+    } catch (rrErr: any) {
+      console.warn("RadioReference API failed, falling back to AI:", rrErr.message);
+      // Fall through to AI search
+    }
+  }
+
+  // --- Fallback: AI-powered search via Gemini ---
+  console.log(`Using AI search for ${safeLocation}...`);
   const response = await fetch('/api/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

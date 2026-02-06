@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown } from 'lucide-react';
+import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
+import { RRCredentials } from './services/rrApi';
 import { SearchResponse, ScanResult, ServiceType } from './types';
 import { FrequencyDisplay } from './components/FrequencyDisplay';
 import { TripPlanner } from './components/TripPlanner';
@@ -59,6 +60,26 @@ function App() {
   // Cache Status State
   const [cacheStatus, setCacheStatus] = useState<'checking' | 'connected' | 'error' | 'offline'>('checking');
   const [cacheErrorMsg, setCacheErrorMsg] = useState<string>('');
+
+  // RadioReference Direct API Credentials
+  const [showRRSettings, setShowRRSettings] = useState(false);
+  const [rrUsername, setRrUsername] = useState(() => localStorage.getItem('rr_username') || '');
+  const [rrPassword, setRrPassword] = useState(() => localStorage.getItem('rr_password') || '');
+  const [showRRPassword, setShowRRPassword] = useState(false);
+  const rrCredentials: RRCredentials | undefined = (rrUsername && rrPassword) ? { username: rrUsername, password: rrPassword } : undefined;
+
+  const saveRRCredentials = () => {
+    localStorage.setItem('rr_username', rrUsername);
+    localStorage.setItem('rr_password', rrPassword);
+    setShowRRSettings(false);
+  };
+
+  const clearRRCredentials = () => {
+    setRrUsername('');
+    setRrPassword('');
+    localStorage.removeItem('rr_username');
+    localStorage.removeItem('rr_password');
+  };
 
   // Handle Authentication Session
   useEffect(() => {
@@ -225,9 +246,14 @@ function App() {
   };
 
   const performAiSearch = async (query: string) => {
-    setSearchStep(`Analyzing Location & Scanning for: ${serviceTypes.slice(0,3).join(', ')}...`);
+    const isZip = /^\d{5}$/.test(query.trim());
+    if (isZip && rrCredentials) {
+      setSearchStep('Connecting to RadioReference Database...');
+    } else {
+      setSearchStep(`Analyzing Location & Scanning for: ${serviceTypes.slice(0,3).join(', ')}...`);
+    }
     try {
-        const response = await searchFrequencies(query, serviceTypes);
+        const response = await searchFrequencies(query, serviceTypes, rrCredentials);
         if (response.data) {
             setResult(response.data);
             setGrounding(response.groundingChunks);
@@ -237,8 +263,6 @@ function App() {
         }
     } catch (e: any) {
          setError(e.message || "AI Search failed.");
-    } finally {
-        setLoading(false);
     }
   };
 
@@ -262,9 +286,17 @@ function App() {
     }
     if (source === 'API') {
       return (
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-green-900/30 border-green-500/50 text-green-400">
-           <Database className="w-4 h-4" />
-           <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Source: RadioReference DB</span>
+        <div className="flex items-center gap-4">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-green-900/30 border-green-500/50 text-green-400">
+               <Database className="w-4 h-4" />
+               <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Source: RadioReference DB</span>
+            </div>
+            {searchTime > 0 && (
+                <div className="text-xs font-mono-tech text-emerald-400 flex items-center gap-1">
+                    <Timer className="w-3 h-3" />
+                    {searchTime.toFixed(2)}s
+                </div>
+            )}
         </div>
       );
     }
@@ -386,6 +418,13 @@ function App() {
                 {/* User / Sign Out */}
                 <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-3 py-1.5 gap-3">
                     <button 
+                        onClick={() => setShowRRSettings(!showRRSettings)}
+                        title="RadioReference Settings"
+                        className={`transition-colors ${rrCredentials ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-400 hover:text-amber-400'}`}
+                    >
+                        <Settings className="w-4 h-4" />
+                    </button>
+                    <button 
                         onClick={handleSignOut}
                         title="Sign Out"
                         className="text-slate-400 hover:text-red-400 transition-colors"
@@ -397,6 +436,89 @@ function App() {
           </div>
         </div>
       </nav>
+
+      {/* RadioReference Settings Panel */}
+      {showRRSettings && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" onClick={() => setShowRRSettings(false)}>
+          <div className="bg-slate-900 w-full max-w-md rounded-xl border border-slate-700 shadow-2xl p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-600/20 rounded-lg">
+                  <Database className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white font-mono-tech">RADIOREFERENCE</h3>
+                  <p className="text-[10px] text-slate-400 font-mono-tech uppercase tracking-wider">Direct Database Access</p>
+                </div>
+              </div>
+              {rrCredentials && (
+                <span className="text-[10px] font-mono-tech text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded-full border border-emerald-500/30">LINKED</span>
+              )}
+            </div>
+
+            <p className="text-sm text-slate-400 mb-4 leading-relaxed">
+              Connect your <strong className="text-white">RadioReference Premium</strong> account to pull <em>verified</em> frequency data directly from the RR database instead of relying on AI search. Your credentials are stored locally in your browser only.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 font-mono-tech mb-1 uppercase">RR Username</label>
+                <input
+                  type="text"
+                  value={rrUsername}
+                  onChange={e => setRrUsername(e.target.value)}
+                  placeholder="Your RadioReference username"
+                  className="w-full bg-[#1e293b] border border-slate-700 rounded px-3 py-2 text-white font-mono-tech text-sm focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 font-mono-tech mb-1 uppercase">RR Password</label>
+                <div className="relative">
+                  <input
+                    type={showRRPassword ? 'text' : 'password'}
+                    value={rrPassword}
+                    onChange={e => setRrPassword(e.target.value)}
+                    placeholder="Your RadioReference password"
+                    className="w-full bg-[#1e293b] border border-slate-700 rounded px-3 py-2 text-white font-mono-tech text-sm focus:border-emerald-500 focus:outline-none pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRRPassword(!showRRPassword)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                  >
+                    {showRRPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 p-3 bg-slate-950 rounded border border-slate-800">
+              <p className="text-[11px] text-slate-500 font-mono-tech leading-relaxed">
+                <span className="text-amber-400">NOTE:</span> A <a href="https://www.radioreference.com/apps/subscription/" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">RadioReference Premium subscription</a> is required. 
+                Your app key is securely stored on the server. ZIP code searches will use the RR database directly; other searches fall back to AI.
+              </p>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={saveRRCredentials}
+                disabled={!rrUsername || !rrPassword}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded font-mono-tech text-sm transition-colors"
+              >
+                SAVE & CONNECT
+              </button>
+              {rrCredentials && (
+                <button
+                  onClick={clearRRCredentials}
+                  className="px-4 py-2 bg-red-900/30 border border-red-500/30 text-red-400 rounded font-mono-tech text-sm hover:bg-red-900/50 transition-colors"
+                >
+                  DISCONNECT
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -433,10 +555,24 @@ function App() {
                       Access the <strong>RadioReference Database</strong> to find Police, Fire, and EMS frequencies for any area. 
                       Now featuring <strong>Cross-Reference Verification</strong> for maximum accuracy.
                     </p>
-                    <div className="flex justify-center gap-4">
+                    <div className="flex justify-center gap-4 flex-wrap">
                         <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-900/20 rounded-full border border-emerald-900/50 text-emerald-400 text-xs font-mono-tech">
                         <ShieldCheck className="w-3 h-3" /> Secure Input Active
                         </div>
+                        
+                        {/* RadioReference API Status */}
+                        {rrCredentials ? (
+                           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-green-900/50 bg-green-900/20 text-green-400 text-xs font-mono-tech">
+                             <Database className="w-3 h-3" /> RR Direct API Linked
+                           </div>
+                        ) : (
+                           <button 
+                              onClick={() => setShowRRSettings(true)}
+                              className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-amber-900/50 bg-amber-900/20 text-amber-400 text-xs font-mono-tech hover:bg-amber-900/30 transition-colors cursor-pointer"
+                           >
+                             <Settings className="w-3 h-3" /> Connect RR Account
+                           </button>
+                        )}
                         
                         {/* Detailed Cache Status Indicator */}
                         {cacheStatus === 'checking' && (
