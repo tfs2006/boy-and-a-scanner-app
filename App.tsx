@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
 import { SearchResponse, ScanResult, ServiceType } from './types';
@@ -13,6 +13,7 @@ import { supabase } from './services/supabaseClient';
 import { Session } from '@supabase/supabase-js';
 import { generateCSV } from './utils/csvGenerator';
 import { exportSentinelZip } from './utils/sentinelExporter';
+import { getFavorites, addFavorite, removeFavorite, Favorite } from './services/favoritesService';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -28,6 +29,10 @@ function App() {
   const [grounding, setGrounding] = useState<SearchResponse['groundingChunks']>(null);
   const [error, setError] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
+
+  // Favorites
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [isSaved, setIsSaved] = useState(false);
 
   // Service Filters
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(['Police', 'Fire', 'EMS']);
@@ -107,8 +112,53 @@ function App() {
   useEffect(() => {
     if (session) {
       checkConnection();
+      loadFavorites();
     }
   }, [session]);
+
+  // Check if current query is already favorited
+  useEffect(() => {
+    if (searchQuery.trim()) {
+      setIsSaved(favorites.some(f => f.location_query.toLowerCase() === searchQuery.trim().toLowerCase()));
+    } else {
+      setIsSaved(false);
+    }
+  }, [searchQuery, favorites]);
+
+  const loadFavorites = async () => {
+    const favs = await getFavorites();
+    setFavorites(favs);
+  };
+
+  const toggleFavorite = async () => {
+    const query = searchQuery.trim();
+    if (!query) return;
+
+    const existing = favorites.find(f => f.location_query.toLowerCase() === query.toLowerCase());
+    if (existing) {
+      await removeFavorite(existing.id);
+      setFavorites(prev => prev.filter(f => f.id !== existing.id));
+    } else {
+      const newFav = await addFavorite(query);
+      if (newFav) setFavorites(prev => [newFav, ...prev]);
+    }
+  };
+
+  const handleFavoriteClick = (query: string) => {
+    setSearchQuery(query);
+    setResult(null);
+    setError(null);
+    // Auto-trigger search
+    setTimeout(() => {
+      const form = document.querySelector('form');
+      if (form) form.requestSubmit();
+    }, 100);
+  };
+
+  const removeFavoriteById = async (id: string) => {
+    await removeFavorite(id);
+    setFavorites(prev => prev.filter(f => f.id !== id));
+  };
 
   const checkConnection = async () => {
     if (!supabase) {
@@ -630,6 +680,19 @@ function App() {
                     />
 
                     <div className="flex items-center gap-1 pr-1">
+                      {/* Favorite Star Button */}
+                      {searchQuery.trim() && (
+                        <button
+                          type="button"
+                          onClick={toggleFavorite}
+                          disabled={loading}
+                          title={isSaved ? 'Remove from favorites' : 'Save to favorites'}
+                          className={`p-2 rounded transition-colors ${isSaved ? 'text-amber-400 hover:text-amber-300' : 'text-slate-500 hover:text-amber-400'}`}
+                        >
+                          <Star className={`w-5 h-5 ${isSaved ? 'fill-amber-400' : ''}`} />
+                        </button>
+                      )}
+
                       {/* GPS Button */}
                       <button
                         type="button"
@@ -680,8 +743,8 @@ function App() {
                           type="button"
                           onClick={() => toggleService(type)}
                           className={`flex items-center gap-2 px-2 py-1.5 rounded text-[10px] font-medium transition-all border font-mono-tech uppercase ${serviceTypes.includes(type)
-                              ? 'bg-amber-600/20 text-amber-400 border-amber-500/50'
-                              : 'bg-slate-800 text-slate-500 border-slate-700 hover:bg-slate-700 hover:text-slate-300'
+                            ? 'bg-amber-600/20 text-amber-400 border-amber-500/50'
+                            : 'bg-slate-800 text-slate-500 border-slate-700 hover:bg-slate-700 hover:text-slate-300'
                             }`}
                         >
                           {serviceTypes.includes(type) ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
@@ -693,6 +756,39 @@ function App() {
                 )}
               </div>
 
+              {/* Saved Locations */}
+              {favorites.length > 0 && (
+                <div className="max-w-lg mx-auto mt-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                    <span className="text-[10px] font-mono-tech uppercase tracking-wider text-slate-500">Saved Locations</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {favorites.map(fav => (
+                      <div
+                        key={fav.id}
+                        className="group inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 bg-slate-800/50 hover:bg-amber-900/20 border border-slate-700 hover:border-amber-500/30 rounded-full transition-all cursor-pointer"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleFavoriteClick(fav.location_query)}
+                          className="text-xs font-mono-tech text-slate-300 hover:text-amber-400 transition-colors"
+                        >
+                          {fav.label || fav.location_query}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); removeFavoriteById(fav.id); }}
+                          className="p-0.5 rounded-full text-slate-600 hover:text-red-400 hover:bg-slate-700 transition-colors opacity-0 group-hover:opacity-100"
+                          title="Remove"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {error && (
                 <div className="max-w-lg mx-auto mt-4 p-3 border rounded text-sm text-center font-mono-tech animate-pulse flex flex-col items-center gap-3 bg-red-900/20 border-red-900/50 text-red-400">
                   <div className="flex items-center gap-2 font-bold justify-center">
