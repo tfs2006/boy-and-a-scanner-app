@@ -31,8 +31,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const prompt = `
     You are an intelligent interface for the RadioReference Database.
     Task: Retrieve the official radio frequency data for Location: "${safeLocation}".
-    IMPORTANT: If the location is a ZIP CODE, first identify the County and State.
     
+    CRITICAL: VERIFY THE LOCATION FIRST.
+    1. If the input is a ZIP CODE (e.g., "${safeLocation}"), use Google Search to confirm the exact City, County, and STATE.
+       - Example: "84770" is Washington, UTAH (UT). Do NOT confuse it with Washington, WI or DC.
+       - If the user provides a City/State, ensure it exists.
+    2. Once the location is verified, retrieve radio data for that SPECIFIC location.
+
     SCOPE: ${safeServices.join(', ')}.
     
     CRITICAL INCLUSION RULES:
@@ -52,7 +57,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       "source": "AI",
       "locationName": "County, State",
       "summary": "Overview...",
-      "crossRef": { "verified": true, "confidenceScore": 95, "sourcesChecked": 3, "notes": "Verified." },
+      "crossRef": { "verified": true, "confidenceScore": 95, "sourcesChecked": 3, "notes": "Verified location as [City, State] via search." },
       "agencies": [
         {
           "name": "Agency Name",
@@ -113,7 +118,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const start = text.indexOf('{');
       const end = text.lastIndexOf('}');
       if (start !== -1 && end !== -1) {
-        try { data = JSON.parse(text.substring(start, end + 1)); } catch (e2) {}
+        try { data = JSON.parse(text.substring(start, end + 1)); } catch (e2) { }
       }
     }
 
