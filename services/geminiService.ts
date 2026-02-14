@@ -6,7 +6,7 @@ import { fetchFromRadioReference, RRCredentials } from "./rrApi";
 
 // --- Caching Helpers ---
 
-async function getFromCache(key: string): Promise<any | null> {
+async function getFromCache(key: string, rrCredentials?: RRCredentials): Promise<any | null> {
   if (!supabase) return null;
   try {
     const { data, error } = await supabase
@@ -16,45 +16,52 @@ async function getFromCache(key: string): Promise<any | null> {
       .single();
 
     if (error || !data) return null;
-    
+
     const result = data.result_data;
+
+    // --- QUALITY CHECK (King of the Hill) ---
+    // If cache is AI-sourced (Silver) but user has RR Creds (Gold), ignore cache to fetch fresh Gold data.
+    if (result && result.source === 'AI' && rrCredentials) {
+      console.log("Cache ignored: Overwriting AI data with potential RadioReference data.");
+      return null;
+    }
 
     // --- STALE CACHE DETECTION ---
     let isStale = false;
     if (result) {
-        if (result.trunkedSystems && Array.isArray(result.trunkedSystems)) {
-            const hasOldSchema = result.trunkedSystems.some((sys: any) => sys.frequencies === undefined);
-            if (hasOldSchema) isStale = true;
-        }
-        if (result.locations && Array.isArray(result.locations)) {
-            const hasOldTripSchema = result.locations.some((loc: any) => 
-                loc.data?.trunkedSystems?.some((sys: any) => sys.frequencies === undefined)
-            );
-            if (hasOldTripSchema) isStale = true;
-        }
+      if (result.trunkedSystems && Array.isArray(result.trunkedSystems)) {
+        const hasOldSchema = result.trunkedSystems.some((sys: any) => sys.frequencies === undefined);
+        if (hasOldSchema) isStale = true;
+      }
+      if (result.locations && Array.isArray(result.locations)) {
+        const hasOldTripSchema = result.locations.some((loc: any) =>
+          loc.data?.trunkedSystems?.some((sys: any) => sys.frequencies === undefined)
+        );
+        if (hasOldTripSchema) isStale = true;
+      }
     }
 
     if (isStale) return null;
 
     // Inject Source: Cache
     if (result && typeof result === 'object') {
-        result.source = 'Cache'; 
-        // Safety normalization
-        if (result.trunkedSystems) {
-            result.trunkedSystems.forEach((s: any) => { if (!s.frequencies) s.frequencies = []; });
-        }
-        if (result.locations) {
-            result.locations.forEach((loc: any) => {
-                if (loc.data) {
-                    loc.data.source = 'Cache';
-                    if (loc.data.trunkedSystems) {
-                        loc.data.trunkedSystems.forEach((s: any) => { if (!s.frequencies) s.frequencies = []; });
-                    }
-                }
-            });
-        }
+      result.source = 'Cache';
+      // Safety normalization
+      if (result.trunkedSystems) {
+        result.trunkedSystems.forEach((s: any) => { if (!s.frequencies) s.frequencies = []; });
+      }
+      if (result.locations) {
+        result.locations.forEach((loc: any) => {
+          if (loc.data) {
+            loc.data.source = 'Cache';
+            if (loc.data.trunkedSystems) {
+              loc.data.trunkedSystems.forEach((s: any) => { if (!s.frequencies) s.frequencies = []; });
+            }
+          }
+        });
+      }
     }
-    
+
     return { data: result, groundingChunks: data.grounding_chunks };
   } catch (e) {
     console.warn("Cache fetch error:", e);
@@ -76,17 +83,17 @@ async function saveToCache(key: string, resultData: any, groundingChunks: any) {
 }
 
 export async function getDatabaseStats(): Promise<number> {
-    if (!supabase) return 0;
-    try {
-        const { count, error } = await supabase
-            .from('search_cache')
-            .select('*', { count: 'exact', head: true });
-        
-        if (error) return 0;
-        return count || 0;
-    } catch (e) {
-        return 0;
-    }
+  if (!supabase) return 0;
+  try {
+    const { count, error } = await supabase
+      .from('search_cache')
+      .select('*', { count: 'exact', head: true });
+
+    if (error) return 0;
+    return count || 0;
+  } catch (e) {
+    return 0;
+  }
 }
 
 // --- Main Services (Using Secure Serverless API Routes) ---
@@ -96,14 +103,14 @@ export const searchFrequencies = async (locationQuery: string, serviceTypes: Ser
   const sortedServices = [...serviceTypes].sort().join('-');
   const cacheKey = `loc_${safeLocation}_[${sortedServices}]`.toLowerCase().replace(/\s+/g, '');
 
-  // Check cache first
-  const cached = await getFromCache(cacheKey);
+  // Check cache first (passing credentials to allow quality overwrite)
+  const cached = await getFromCache(cacheKey, rrCredentials);
   if (cached) {
     console.log(`Cache Hit for ${safeLocation}`);
     return { data: cached.data, groundingChunks: cached.groundingChunks, rawText: "Retrieved from Cache" };
   }
 
-  console.log(`Cache Miss for ${safeLocation}.`);
+  console.log(`Cache Miss (or Quality Overwrite) for ${safeLocation}.`);
 
   // --- Try RadioReference Direct API first (ZIP codes only, requires RR credentials) ---
   const isZip = /^\d{5}$/.test(safeLocation.trim());
@@ -111,7 +118,7 @@ export const searchFrequencies = async (locationQuery: string, serviceTypes: Ser
     try {
       console.log(`Attempting RadioReference Direct API for ZIP ${safeLocation}...`);
       const rrData = await fetchFromRadioReference(safeLocation.trim(), rrCredentials, serviceTypes);
-      
+
       if (rrData && (rrData.agencies?.length > 0 || rrData.trunkedSystems?.length > 0)) {
         // Save to cache
         await saveToCache(cacheKey, rrData, null);
