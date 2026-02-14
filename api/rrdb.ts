@@ -284,9 +284,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Collect relevant tag IDs based on user's service filter
     const relevantTagIds = new Set<number>();
-    for (const svc of safeServices) {
-      for (const tagId of getTagIdsForService(svc)) {
-        relevantTagIds.add(tagId);
+
+    // Heuristic: If we are asking for a lot of services (Universal Cache), fetch EVERYTHING.
+    // This prevents hiding data due to missing tag mappings in TAG_MAP.
+    const fetchAllData = safeServices.length > 12;
+
+    if (!fetchAllData) {
+      for (const svc of safeServices) {
+        for (const tagId of getTagIdsForService(svc)) {
+          relevantTagIds.add(tagId);
+        }
       }
     }
 
@@ -485,6 +492,8 @@ function parseFrequencies(freqXml: string, relevantTagIds: Set<number>): any[] {
 
     // Check if this frequency has a relevant tag
     const tagIds = extractTagIds(itemXml);
+
+    // If relevantTagIds is empty, we assume "Fetch All" (no filter)
     const hasRelevantTag = relevantTagIds.size === 0 || tagIds.some(t => relevantTagIds.has(t));
     if (!hasRelevantTag && tagIds.length > 0) continue;
 
