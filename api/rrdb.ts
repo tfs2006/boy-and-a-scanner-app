@@ -210,7 +210,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `);
 
     // Parse ALL items returned for the ZIP
-    const zipItems = getItems(zipXml);
+    let zipItems = getItems(zipXml);
+
+    // If no <item> tags found, but we have a ctid in the root, treat it as a single item
+    if (zipItems.length === 0) {
+      const rootCtid = getTextContent(zipXml, 'ctid');
+      if (rootCtid && rootCtid !== '0') {
+        zipItems = [zipXml];
+      }
+    }
+
     let bestMatch: { ctid: string; stid: string; city: string } | null = null;
 
     for (const itemXml of zipItems) {
@@ -244,7 +253,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (faultString) {
         return res.status(401).json({ error: `RadioReference: ${faultString}` });
       }
-      return res.status(404).json({ error: 'ZIP code not found in RadioReference database.' });
+      return res.status(404).json({ error: 'ZIP code not found in RadioReference database (or state mismatch).' });
     }
 
     const { ctid, stid, city } = bestMatch;
