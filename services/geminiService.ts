@@ -43,9 +43,13 @@ async function getFromCache(key: string, rrCredentials?: RRCredentials): Promise
 
     if (isStale) return null;
 
-    // Inject Source: Cache
+    // Inject Source: Cache (unless it is premium RadioReference data)
     if (result && typeof result === 'object') {
-      result.source = 'Cache';
+      // Only overwrite source if it's NOT already 'API' (RadioReference)
+      if (result.source !== 'API') {
+        result.source = 'Cache';
+      }
+
       // Safety normalization
       if (result.trunkedSystems) {
         result.trunkedSystems.forEach((s: any) => { if (!s.frequencies) s.frequencies = []; });
@@ -53,7 +57,10 @@ async function getFromCache(key: string, rrCredentials?: RRCredentials): Promise
       if (result.locations) {
         result.locations.forEach((loc: any) => {
           if (loc.data) {
-            loc.data.source = 'Cache';
+            // Same logic for trip locations
+            if (loc.data.source !== 'API') {
+              loc.data.source = 'Cache';
+            }
             if (loc.data.trunkedSystems) {
               loc.data.trunkedSystems.forEach((s: any) => { if (!s.frequencies) s.frequencies = []; });
             }
