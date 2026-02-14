@@ -820,10 +820,10 @@ function App() {
             {/* Results */}
             {result && (
               <div className="space-y-8 animate-fade-in">
-                <div className="flex justify-center gap-4 mb-6">
+                <div className="flex flex-wrap justify-center gap-4 mb-6">
                   {getSourceBadge(result.source)}
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-center gap-2">
                     <button
                       onClick={() => generateCSV(result)}
                       className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-emerald-900/30 border-emerald-500/50 text-emerald-400 hover:bg-emerald-900/50 hover:text-white transition-colors"
