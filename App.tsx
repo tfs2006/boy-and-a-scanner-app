@@ -264,6 +264,20 @@ function App() {
     );
   };
 
+  const handleSentinelCopy = (data: ScanResult) => {
+    const text = generateSentinelExport(data);
+    if (!text) {
+      alert("No conventional frequencies to export.");
+      return;
+    }
+    navigator.clipboard.writeText(text).then(() => {
+      alert("Copied to Clipboard! \n\nOpen Uniden Sentinel -> Right Click 'Department' -> Paste.");
+    }).catch(err => {
+      console.error("Clipboard failed:", err);
+      alert("Failed to copy to clipboard.");
+    });
+  };
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
 
