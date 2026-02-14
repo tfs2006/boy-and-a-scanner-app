@@ -36,8 +36,8 @@ const processScanResult = (data: ScanResult): string[][] => {
   const location = data.locationName;
 
   // 1. Process Conventional Agencies
-  data.agencies.forEach(agency => {
-    agency.frequencies.forEach(freq => {
+  (data.agencies || []).forEach(agency => {
+    (agency.frequencies || []).forEach(freq => {
       rows.push([
         location,
         'Conventional',
@@ -53,22 +53,22 @@ const processScanResult = (data: ScanResult): string[][] => {
   });
 
   // 2. Process Trunked Systems
-  data.trunkedSystems.forEach(sys => {
+  (data.trunkedSystems || []).forEach(sys => {
     // Add Control Channels as rows (marked as Site Freqs)
     if (sys.frequencies) {
-        sys.frequencies.forEach(f => {
-            rows.push([
-                location,
-                'Trunked Site',
-                sys.name,
-                sys.location, // Site Name
-                f.freq,
-                '',
-                sys.type, // Mode context
-                f.use || 'Control',
-                `Site Frequency (${f.use || 'Control'})`
-            ]);
-        });
+      sys.frequencies.forEach(f => {
+        rows.push([
+          location,
+          'Trunked Site',
+          sys.name,
+          sys.location, // Site Name
+          f.freq,
+          '',
+          sys.type, // Mode context
+          f.use || 'Control',
+          `Site Frequency (${f.use || 'Control'})`
+        ]);
+      });
     }
 
     // Add Talkgroups
@@ -104,6 +104,7 @@ const downloadCsv = (content: string, filename: string) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }
 };
 
@@ -119,7 +120,7 @@ export const generateCSV = (data: ScanResult | TripResult) => {
     // It's a TripResult
     const trip = data as TripResult;
     filename = `Trip_${trip.startLocation}_to_${trip.endLocation}.csv`.replace(/\s+/g, '_');
-    
+
     trip.locations.forEach(loc => {
       const locRows = processScanResult(loc.data);
       allRows = [...allRows, ...locRows];

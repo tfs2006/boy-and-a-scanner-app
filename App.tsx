@@ -154,7 +154,7 @@ function App() {
 
   // Workflow steps for the loading animation
   useEffect(() => {
-    if (loading && !result && searchStep !== 'Initializing Scanner Protocol...') {
+    if (loading && !result) {
        const steps = [
          'Engaging AI Analysis...',
          'Cross-Referencing Data Sources...',
@@ -163,18 +163,15 @@ function App() {
        ];
        let i = 0;
        
-       // Only run this cycle if we are past the initial API check
-       if (searchStep.includes('AI') || searchStep.includes('Cross')) {
-           const interval = setInterval(() => {
-             if (i < steps.length) {
-                setSearchStep(steps[i]);
-                i++;
-             }
-           }, 2000); // Update text every 2s to show progress
-           return () => clearInterval(interval);
-       }
+       const interval = setInterval(() => {
+         if (i < steps.length) {
+            setSearchStep(steps[i]);
+            i++;
+         }
+       }, 2000); // Update text every 2s to show progress
+       return () => clearInterval(interval);
     }
-  }, [loading, result, searchStep]);
+  }, [loading, result]);
 
   const handleGeoLocation = () => {
     if (!navigator.geolocation) {
@@ -183,18 +180,33 @@ function App() {
     }
 
     setLoading(true);
+    setError(null);
+    setResult(null);
+    setGrounding(null);
+    setSearchTime(0);
     setSearchStep('Acquiring GPS Satellite Lock...');
     
+    const startTime = performance.now();
+
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const { latitude, longitude } = position.coords;
-        const coordString = `Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`;
+        const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
         setSearchQuery(coordString);
-        // Automatically trigger search with coordinates
-        performAiSearch(coordString);
+        try {
+          await performAiSearch(coordString);
+        } catch (err: any) {
+          setError("Search failed. " + (err.message || 'Please try again.'));
+        } finally {
+          const endTime = performance.now();
+          setSearchTime((endTime - startTime) / 1000);
+          setLoading(false);
+          setSearchStep('');
+        }
       },
       (err) => {
         setLoading(false);
+        setSearchStep('');
         setError("GPS Access Denied. Please manually enter your location.");
         console.error(err);
       }
@@ -246,6 +258,7 @@ function App() {
   };
 
   const performAiSearch = async (query: string) => {
+    setError(null);
     const isZip = /^\d{5}$/.test(query.trim());
     if (isZip && rrCredentials) {
       setSearchStep('Connecting to RadioReference Database...');
