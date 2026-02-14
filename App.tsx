@@ -825,19 +825,29 @@ function App() {
 
                   <div className="flex flex-wrap items-center justify-center gap-2">
                     <button
+                      onClick={() => handleSentinelCopy(result)}
+                      className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-amber-900/30 border-amber-500/50 text-amber-400 hover:bg-amber-900/50 hover:text-white transition-colors"
+                      title="Copy Conventional Frequencies for Uniden Sentinel (Paste)"
+                    >
+                      <Copy className="w-4 h-4" />
+                      <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Copy for Sentinel</span>
+                    </button>
+                    <button
                       onClick={() => generateCSV(result)}
                       className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-emerald-900/30 border-emerald-500/50 text-emerald-400 hover:bg-emerald-900/50 hover:text-white transition-colors"
                     >
                       <FileDown className="w-4 h-4" />
                       <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">CSV</span>
                     </button>
+                    {/* 
                     <button
                       onClick={() => exportSentinelZip(result)}
                       className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-amber-900/30 border-amber-500/50 text-amber-400 hover:bg-amber-900/50 hover:text-white transition-colors"
                     >
                       <Zap className="w-4 h-4" />
                       <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">SDS100</span>
-                    </button>
+                    </button> 
+                    */}
                     <button
                       onClick={() => setShowManual(true)}
                       className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-blue-900/30 border-blue-500/50 text-blue-400 hover:bg-blue-900/50 hover:text-white transition-colors"
