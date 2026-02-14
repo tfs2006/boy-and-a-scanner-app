@@ -84,7 +84,7 @@ function getItems(xml: string): string[] {
   let currentItem = '';
   let inItem = false;
   const lines = xml.split(/(<\/?item[^>]*>)/);
-  
+
   for (const part of lines) {
     if (part.match(/<item[^/][^>]*>/i) || part === '<item>') {
       depth++;
@@ -209,11 +209,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ${authXml}
     `);
 
-    const ctid = getTextContent(zipXml, 'ctid');
-    const stid = getTextContent(zipXml, 'stid');
-    const city = getTextContent(zipXml, 'city');
+    // Parse ALL items returned for the ZIP
+    const zipItems = getItems(zipXml);
+    let bestMatch: { ctid: string; stid: string; city: string } | null = null;
 
-    if (!ctid || ctid === '0') {
+    for (const itemXml of zipItems) {
+      const c = getTextContent(itemXml, 'ctid');
+      const s = getTextContent(itemXml, 'stid');
+      const city = getTextContent(itemXml, 'city');
+
+      if (!c || c === '0') continue;
+
+      // Validation: Verify State ID matches ZIP prefix
+      // WI (49) starts with 53, 54. UT (44) starts with 84.
+      const isValid = validateZipState(zip, s);
+      if (isValid) {
+        bestMatch = { ctid: c, stid: s, city };
+        break;
+      }
+    }
+
+    // Fallback if validation fails (just take first valid item)
+    if (!bestMatch && zipItems.length > 0) {
+      const first = zipItems[0];
+      const c = getTextContent(first, 'ctid');
+      const s = getTextContent(first, 'stid');
+      const city = getTextContent(first, 'city');
+      if (c && c !== '0') bestMatch = { ctid: c, stid: s, city };
+    }
+
+    if (!bestMatch) {
       // Check for SOAP fault
       const faultString = getTextContent(zipXml, 'faultstring');
       if (faultString) {
@@ -222,7 +247,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(404).json({ error: 'ZIP code not found in RadioReference database.' });
     }
 
-    console.log(`[RR API] ZIP ${zip} → City: ${city}, County ID: ${ctid}, State ID: ${stid}`);
+    const { ctid, stid, city } = bestMatch;
+    console.log(`[RR API] ZIP ${zip} → City: ${city}, County ID: ${ctid}, State ID: ${stid} (Validated)`);
 
     // -------------------------------------------------------
     // Step 2: getCountyInfo → get categories, subcategories, trunked system list, agencies
@@ -238,7 +264,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Parse categories & subcategories to get scids
     const subcatIds = parseSubcategories(countyXml);
-    
+
     // Parse trunked system list
     const trsListRaw = parseTrsList(countyXml);
 
@@ -246,7 +272,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Step 3: Get conventional frequencies from subcategories
     // -------------------------------------------------------
     console.log(`[RR API] Step 3: Fetching ${subcatIds.length} subcategory frequency sets`);
-    
+
     // Collect relevant tag IDs based on user's service filter
     const relevantTagIds = new Set<number>();
     for (const svc of safeServices) {
@@ -258,7 +284,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Fetch all frequencies for each subcategory (but limit concurrency)
     const agencies: any[] = [];
     const batchSize = 5;
-    
+
     for (let i = 0; i < subcatIds.length; i += batchSize) {
       const batch = subcatIds.slice(i, i + batchSize);
       const results = await Promise.all(batch.map(async (sc) => {
@@ -328,7 +354,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (sites.length > 0 || talkgroups.length > 0) {
           // Use the site(s) that match our county, or the first site
           const primarySite = sites[0];
-          
+
           trunkedSystems.push({
             name: sysName,
             type: mapTrsType(sysType),
@@ -363,14 +389,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (error: any) {
     console.error("RR API Error:", error);
-    
+
     const msg = error.message || '';
     if (msg.includes('401') || msg.includes('authentication') || msg.includes('Invalid')) {
       return res.status(401).json({ error: 'RadioReference authentication failed. Check your username and password.' });
     }
-    
+
     return res.status(500).json({ error: 'RadioReference API request failed. ' + msg });
   }
+}
+
+// Validate if the ZIP code prefix matches the expected RadioReference State ID
+function validateZipState(zip: string, stid: string): boolean {
+  if (!zip || !stid) return false;
+  const prefix = parseInt(zip.substring(0, 2));
+  const s = parseInt(stid);
+
+  if (isNaN(prefix) || isNaN(s)) return false;
+
+  // UT (44) starts with 84
+  if (s === 44) return prefix >= 84 && prefix <= 84;
+
+  // WI (49) starts with 53, 54
+  if (s === 49) return prefix >= 53 && prefix <= 54;
+
+  return true; // Default to true for other states
 }
 
 // --- XML Parsing Functions ---
@@ -379,19 +422,19 @@ interface SubcatInfo { scid: string; name: string; catName: string; }
 
 function parseSubcategories(countyXml: string): SubcatInfo[] {
   const results: SubcatInfo[] = [];
-  
+
   // Extract cats section
   const catsMatch = countyXml.match(/<cats[^>]*>(.*?)<\/cats>/is);
   if (!catsMatch) return results;
-  
+
   const catItems = getItems(catsMatch[1]);
   for (const catXml of catItems) {
     const catName = getTextContent(catXml, 'cName');
-    
+
     // Find subcats within this category
     const subcatsMatch = catXml.match(/<subcats[^>]*>(.*?)<\/subcats>/is);
     if (!subcatsMatch) continue;
-    
+
     const scItems = getItems(subcatsMatch[1]);
     for (const scXml of scItems) {
       const scid = getTextContent(scXml, 'scid');
@@ -401,16 +444,16 @@ function parseSubcategories(countyXml: string): SubcatInfo[] {
       }
     }
   }
-  
+
   return results;
 }
 
 function parseTrsList(countyXml: string): Array<{ sid: string; sName: string }> {
   const results: Array<{ sid: string; sName: string }> = [];
-  
+
   const trsMatch = countyXml.match(/<trsList[^>]*>(.*?)<\/trsList>/is);
   if (!trsMatch) return results;
-  
+
   const trsItems = getItems(trsMatch[1]);
   for (const trsXml of trsItems) {
     const sid = getTextContent(trsXml, 'sid');
@@ -419,18 +462,18 @@ function parseTrsList(countyXml: string): Array<{ sid: string; sName: string }> 
       results.push({ sid, sName });
     }
   }
-  
+
   return results;
 }
 
 function parseFrequencies(freqXml: string, relevantTagIds: Set<number>): any[] {
   const results: any[] = [];
   const items = getItems(freqXml);
-  
+
   for (const itemXml of items) {
     const out = getTextContent(itemXml, 'out');
     if (!out || out === '0') continue;
-    
+
     // Check if this frequency has a relevant tag
     const tagIds = extractTagIds(itemXml);
     const hasRelevantTag = relevantTagIds.size === 0 || tagIds.some(t => relevantTagIds.has(t));
@@ -452,7 +495,7 @@ function parseFrequencies(freqXml: string, relevantTagIds: Set<number>): any[] {
       nac: '' // NAC is on trunked systems, not conventional
     });
   }
-  
+
   return results;
 }
 
@@ -460,7 +503,7 @@ function extractTagIds(xml: string): number[] {
   const ids: number[] = [];
   const tagsMatch = xml.match(/<tags[^>]*>(.*?)<\/tags>/is);
   if (!tagsMatch) return ids;
-  
+
   const tagIdMatches = tagsMatch[1].matchAll(/<tagId[^>]*>(\d+)<\/tagId>/gi);
   for (const m of tagIdMatches) {
     ids.push(parseInt(m[1]));
@@ -471,7 +514,7 @@ function extractTagIds(xml: string): number[] {
 function parseSites(sitesXml: string, targetCtid: string): any[] {
   const results: any[] = [];
   const items = getItems(sitesXml);
-  
+
   // Sort county-matching sites first
   const sorted = items.sort((a, b) => {
     const aCtid = getTextContent(a, 'siteCtid');
@@ -508,18 +551,18 @@ function parseSites(sitesXml: string, targetCtid: string): any[] {
       frequencies: siteFreqs
     });
   }
-  
+
   return results;
 }
 
 function parseTalkgroups(tgXml: string, relevantTagIds: Set<number>): any[] {
   const results: any[] = [];
   const items = getItems(tgXml);
-  
+
   for (const itemXml of items) {
     const dec = getTextContent(itemXml, 'tgDec');
     if (!dec || dec === '0') continue;
-    
+
     // Check tag filter
     const tagIds = extractTagIds(itemXml);
     const hasRelevantTag = relevantTagIds.size === 0 || tagIds.some(t => relevantTagIds.has(t));
@@ -536,7 +579,7 @@ function parseTalkgroups(tgXml: string, relevantTagIds: Set<number>): any[] {
       tag: tagName
     });
   }
-  
+
   return results;
 }
 
