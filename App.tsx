@@ -12,6 +12,7 @@ import { isValidLocationInput } from './utils/security';
 import { supabase } from './services/supabaseClient';
 import { Session } from '@supabase/supabase-js';
 import { generateCSV } from './utils/csvGenerator';
+import { generateSentinelExport } from './utils/exportUtils';
 import { exportSentinelZip } from './utils/sentinelExporter';
 import { getFavorites, addFavorite, removeFavorite, Favorite } from './services/favoritesService';
 
