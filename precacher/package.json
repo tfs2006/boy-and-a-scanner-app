@@ -1,0 +1,15 @@
+{
+    "name": "scanner-precacher",
+    "version": "1.0.0",
+    "description": "Pre-caches popular ZIP code frequency data into Supabase for Boy & A Scanner",
+    "type": "module",
+    "scripts": {
+        "start": "node precacher.mjs",
+        "test": "node precacher.mjs --test"
+    },
+    "dependencies": {
+        "@google/genai": "^1.0.0",
+        "@supabase/supabase-js": "^2.49.0",
+        "dotenv": "^16.4.0"
+    }
+}
