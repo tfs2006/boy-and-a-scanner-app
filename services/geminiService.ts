@@ -105,79 +105,103 @@ export async function getDatabaseStats(): Promise<number> {
 
 // --- Main Services (Using Secure Serverless API Routes) ---
 
-export const searchFrequencies = async (locationQuery: string, serviceTypes: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials): Promise<SearchResponse> => {
-  const safeLocation = sanitizeForPrompt(locationQuery);
-  const sortedServices = [...serviceTypes].sort().join('-');
-  const cacheKey = `v3_loc_${safeLocation}_[${sortedServices}]`.toLowerCase().replace(/\s+/g, '');
+// Comprehensive list of services to fetch for the cache
+const ALL_SERVICE_TYPES: ServiceType[] = [
+  'Police', 'Fire', 'EMS', 'Ham Radio', 'Railroad', 'Air', 'Marine',
+  'Federal', 'Military', 'Public Works', 'Utilities', 'Transportation',
+  'Business', 'Hospitals', 'Schools', 'Corrections', 'Security', 'Multi-Dispatch'
+];
 
-  // Check cache first (passing credentials to allow quality overwrite)
+export const searchFrequencies = async (locationQuery: string, userSelectedServices: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials): Promise<SearchResponse> => {
+  const safeLocation = sanitizeForPrompt(locationQuery);
+
+  // Cache Key is now strictly LOCATION based. We dropped the [services] part.
+  // This means "84770" always maps to the same cache entry, regardless of what user checked.
+  const cacheKey = `v4_loc_${safeLocation}`.toLowerCase().replace(/\s+/g, '');
+
+  console.log(`[Cache Strategy] Checking Universal Cache for key: ${cacheKey}`);
+
+  // 1. Check Cache
   const cached = await getFromCache(cacheKey, rrCredentials);
   if (cached) {
-    console.log(`Cache Hit for ${safeLocation}`);
-    return { data: cached.data, groundingChunks: cached.groundingChunks, rawText: "Retrieved from Cache" };
+    console.log(`[Cache Hit] Univeral data found for ${safeLocation}`);
+    // FILTER: We have everything, but user only asked for specific types.
+    const filteredData = filterDataByServices(cached.data, userSelectedServices);
+    return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: "Retrieved from Cache" };
   }
 
-  console.log(`Cache Miss (or Quality Overwrite) for ${safeLocation}.`);
+  console.log(`[Cache Miss] Fetching MASTER RECORD for ${safeLocation} (All Service Types)...`);
 
-  // --- Try RadioReference Direct API first (ZIP codes only, requires RR credentials) ---
+  // 2. Fetch MASTER RECORD (All Services)
+  // We ignore userSelectedServices for the fetch, asking for EVERYTHING.
+  let masterData: ScanResult | null = null;
+  let masterGrounding: any = null;
+  let rawText = "";
+
+  // A. Try RadioReference Direct API (if credentials exist and is ZIP)
   const isZip = /^\d{5}$/.test(safeLocation.trim());
   if (isZip && rrCredentials) {
     try {
-      console.log(`Attempting RadioReference Direct API for ZIP ${safeLocation}...`);
-      const rrData = await fetchFromRadioReference(safeLocation.trim(), rrCredentials, serviceTypes);
-
-      if (rrData && (rrData.agencies?.length > 0 || rrData.trunkedSystems?.length > 0)) {
-        // Save to cache
-        await saveToCache(cacheKey, rrData, null);
-        return { data: rrData, groundingChunks: null, rawText: "Retrieved from RadioReference API" };
-      }
+      console.log(`[RR API] Fetching Master Record for ZIP ${safeLocation}...`);
+      masterData = await fetchFromRadioReference(safeLocation.trim(), rrCredentials, ALL_SERVICE_TYPES);
+      rawText = "Retrieved from RadioReference API";
     } catch (rrErr: any) {
       console.warn("RadioReference API failed, falling back to AI:", rrErr.message);
-      // Fall through to AI search
     }
   }
 
-  // --- Fallback: AI-powered search via Gemini ---
-  console.log(`Using AI search for ${safeLocation}...`);
-  const response = await fetch('/api/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ location: safeLocation, serviceTypes })
-  });
+  // B. Fallback to AI
+  if (!masterData) {
+    console.log(`[AI Search] Fetching Master Record for ${safeLocation}...`);
+    const response = await fetch('/api/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ location: safeLocation, serviceTypes: ALL_SERVICE_TYPES })
+    });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Search request failed');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Search request failed');
+    }
+
+    const result = await response.json();
+    masterData = result.data;
+    masterGrounding = result.groundingChunks;
+    rawText = result.rawText;
   }
 
-  const result = await response.json();
-  const { data, groundingChunks, rawText } = result;
-
-  // Save to cache if we got valid data
-  if (data && (data.agencies?.length > 0 || data.trunkedSystems?.length > 0)) {
-    await saveToCache(cacheKey, data, groundingChunks);
+  // 3. Save MASTER RECORD to Cache
+  if (masterData && (masterData.agencies?.length > 0 || masterData.trunkedSystems?.length > 0)) {
+    console.log(`[Cache Save] Storing Master Record for ${safeLocation}`);
+    await saveToCache(cacheKey, masterData, masterGrounding);
   }
 
-  return { data, groundingChunks, rawText };
+  // 4. Return FILTERED data to user
+  const filteredData = filterDataByServices(masterData, userSelectedServices);
+  return { data: filteredData, groundingChunks: masterGrounding, rawText };
 };
 
-export const planTrip = async (start: string, end: string, serviceTypes: ServiceType[]): Promise<{ trip: TripResult | null, groundingChunks: any[] }> => {
+export const planTrip = async (start: string, end: string, userSelectedServices: ServiceType[]): Promise<{ trip: TripResult | null, groundingChunks: any[] }> => {
   const safeStart = sanitizeForPrompt(start);
   const safeEnd = sanitizeForPrompt(end);
-  const sortedServices = [...serviceTypes].sort().join('-');
-  const cacheKey = `v3_trip_${safeStart}_to_${safeEnd}_[${sortedServices}]`.toLowerCase().replace(/\s+/g, '');
 
-  // Check cache first
+  // Trip Cache is also location-pair based only.
+  const cacheKey = `v4_trip_${safeStart}_to_${safeEnd}`.toLowerCase().replace(/\s+/g, '');
+
+  // 1. Check Cache
   const cached = await getFromCache(cacheKey);
   if (cached) {
-    return { trip: cached.data, groundingChunks: cached.groundingChunks };
+    console.log(`[Cache Hit] Trip found.`);
+    const filteredTrip = filterTripByServices(cached.data, userSelectedServices);
+    return { trip: filteredTrip, groundingChunks: cached.groundingChunks };
   }
 
-  // Call the secure serverless API route (API key stays on server)
+  // 2. Fetch MASTER TRIP (All Services)
+  console.log(`[Trip Plan] Fetching Master Trip Record...`);
   const response = await fetch('/api/trip', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ start: safeStart, end: safeEnd, serviceTypes })
+    body: JSON.stringify({ start: safeStart, end: safeEnd, serviceTypes: ALL_SERVICE_TYPES })
   });
 
   if (!response.ok) {
@@ -186,12 +210,89 @@ export const planTrip = async (start: string, end: string, serviceTypes: Service
   }
 
   const result = await response.json();
-  const { trip, groundingChunks } = result;
+  const masterTrip = result.trip;
+  const masterGrounding = result.groundingChunks;
 
-  // Save to cache if we got valid data
-  if (trip && trip.locations?.length > 0) {
-    await saveToCache(cacheKey, trip, groundingChunks);
+  // 3. Save MASTER TRIP to Cache
+  if (masterTrip && masterTrip.locations?.length > 0) {
+    await saveToCache(cacheKey, masterTrip, masterGrounding);
   }
 
-  return { trip, groundingChunks };
+  // 4. Return FILTERED trip
+  const filteredTrip = filterTripByServices(masterTrip, userSelectedServices);
+  return { trip: filteredTrip, groundingChunks: masterGrounding };
 };
+
+// --- Filtering Helpers ---
+
+function filterDataByServices(data: ScanResult | null, services: ServiceType[]): ScanResult | null {
+  if (!data) return null;
+
+  // Deep copy to avoid mutating cache
+  const result = JSON.parse(JSON.stringify(data));
+  const allowedcats = new Set(services.map(s => s.toLowerCase()));
+
+  // 1. Filter Agencies
+  if (result.agencies) {
+    result.agencies = result.agencies.filter((agency: any) => {
+      // Heuristic: Check if agency category matches any selected service
+      // Map agency category (e.g. "Law Dispatch") to ServiceType (e.g. "Police")
+      // We'll use a loose match
+      const cat = (agency.category || '').toLowerCase();
+      return isCategoryAllowed(cat, allowedcats);
+    });
+  }
+
+  // 2. Filter Trunked Systems? 
+  // Trunked systems often carry ALL traffic. It's safer to keep the system 
+  // but maybe filter its talkgroups. For now, strict filtering might hide 
+  // control channels needed for scanning.
+  // Strategy: Keep all Trunked Systems, but filter Talkgroups.
+  if (result.trunkedSystems) {
+    result.trunkedSystems.forEach((sys: any) => {
+      if (sys.talkgroups) {
+        sys.talkgroups = sys.talkgroups.filter((tg: any) => {
+          const tag = (tg.tag || tg.description || '').toLowerCase();
+          return isCategoryAllowed(tag, allowedcats);
+        });
+      }
+    });
+  }
+
+  return result;
+}
+
+function filterTripByServices(trip: TripResult | null, services: ServiceType[]): TripResult | null {
+  if (!trip) return null;
+  const result = JSON.parse(JSON.stringify(trip));
+
+  if (result.locations) {
+    result.locations.forEach((loc: any) => {
+      if (loc.data) {
+        loc.data = filterDataByServices(loc.data, services);
+      }
+    });
+  }
+  return result;
+}
+
+function isCategoryAllowed(category: string, allowedSet: Set<string>): boolean {
+  const c = category.toLowerCase();
+
+  // Mappings
+  if (allowedSet.has('police') && (c.includes('law') || c.includes('police') || c.includes('sheriff') || c.includes('patrol'))) return true;
+  if (allowedSet.has('fire') && (c.includes('fire') || c.includes('rescue'))) return true;
+  if (allowedSet.has('ems') && (c.includes('ems') || c.includes('medic') || c.includes('ambulance') || c.includes('hospital'))) return true;
+  if (allowedSet.has('railroad') && (c.includes('rail'))) return true;
+  if (allowedSet.has('air') && (c.includes('air') || c.includes('aviation'))) return true;
+  if (allowedSet.has('marine') && (c.includes('marine') || c.includes('coast'))) return true;
+
+  // Direct matches
+  for (const allowed of allowedSet) {
+    if (c.includes(allowed)) return true;
+  }
+
+  // If "Multi-Dispatch" or "Other" is implicit, maybe allow?
+  // For now, strict-ish.
+  return false;
+}
