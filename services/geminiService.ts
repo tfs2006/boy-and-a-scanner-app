@@ -101,7 +101,7 @@ export async function getDatabaseStats(): Promise<number> {
 export const searchFrequencies = async (locationQuery: string, serviceTypes: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials): Promise<SearchResponse> => {
   const safeLocation = sanitizeForPrompt(locationQuery);
   const sortedServices = [...serviceTypes].sort().join('-');
-  const cacheKey = `loc_${safeLocation}_[${sortedServices}]`.toLowerCase().replace(/\s+/g, '');
+  const cacheKey = `v2_loc_${safeLocation}_[${sortedServices}]`.toLowerCase().replace(/\s+/g, '');
 
   // Check cache first (passing credentials to allow quality overwrite)
   const cached = await getFromCache(cacheKey, rrCredentials);
@@ -158,7 +158,7 @@ export const planTrip = async (start: string, end: string, serviceTypes: Service
   const safeStart = sanitizeForPrompt(start);
   const safeEnd = sanitizeForPrompt(end);
   const sortedServices = [...serviceTypes].sort().join('-');
-  const cacheKey = `trip_${safeStart}_to_${safeEnd}_[${sortedServices}]`.toLowerCase().replace(/\s+/g, '');
+  const cacheKey = `v2_trip_${safeStart}_to_${safeEnd}_[${sortedServices}]`.toLowerCase().replace(/\s+/g, '');
 
   // Check cache first
   const cached = await getFromCache(cacheKey);
