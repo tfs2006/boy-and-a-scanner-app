@@ -279,20 +279,85 @@ function filterTripByServices(trip: TripResult | null, services: ServiceType[]):
 function isCategoryAllowed(category: string, allowedSet: Set<string>): boolean {
   const c = category.toLowerCase();
 
-  // Mappings
-  if (allowedSet.has('police') && (c.includes('law') || c.includes('police') || c.includes('sheriff') || c.includes('patrol'))) return true;
-  if (allowedSet.has('fire') && (c.includes('fire') || c.includes('rescue'))) return true;
-  if (allowedSet.has('ems') && (c.includes('ems') || c.includes('medic') || c.includes('ambulance') || c.includes('hospital'))) return true;
-  if (allowedSet.has('railroad') && (c.includes('rail'))) return true;
-  if (allowedSet.has('air') && (c.includes('air') || c.includes('aviation'))) return true;
-  if (allowedSet.has('marine') && (c.includes('marine') || c.includes('coast'))) return true;
+  // Robust Keyword Matching for ALL 18 Service Types
 
-  // Direct matches
+  if (allowedSet.has('police')) {
+    if (c.includes('law') || c.includes('police') || c.includes('sheriff') || c.includes('patrol') || c.includes('trooper') || c.includes('marshal') || c.includes('constable') || c.includes('detective') || c.includes('fbi') || c.includes('dea') || c.includes('atf')) return true;
+  }
+
+  if (allowedSet.has('fire')) {
+    if (c.includes('fire') || c.includes('rescue') || c.includes('engine') || c.includes('ladder') || c.includes('battalion') || c.includes('hazmat')) return true;
+  }
+
+  if (allowedSet.has('ems')) {
+    if (c.includes('ems') || c.includes('medic') || c.includes('ambulance') || c.includes('hospital') || c.includes('paramedic') || c.includes('life flight') || c.includes('rescue')) return true;
+  }
+
+  if (allowedSet.has('ham radio')) {
+    if (c.includes('ham') || c.includes('amateur') || c.includes('repeater') || c.includes('ares') || c.includes('races') || c.includes('skywarn')) return true;
+  }
+
+  if (allowedSet.has('railroad')) {
+    if (c.includes('rail') || c.includes('train') || c.includes('locomotive') || c.includes('yard') || c.includes('conductor') || c.includes('union pacific') || c.includes('bnsf') || c.includes('csx') || c.includes('amtrak')) return true;
+  }
+
+  if (allowedSet.has('air')) {
+    if (c.includes('air') || c.includes('aviation') || c.includes('control tower') || c.includes('approach') || c.includes('departure') || c.includes('ground') || c.includes('unicom') || c.includes('airport') || c.includes('pilot')) return true;
+  }
+
+  if (allowedSet.has('marine')) {
+    if (c.includes('marine') || c.includes('coast') || c.includes('boat') || c.includes('ship') || c.includes('vessel') || c.includes('port') || c.includes('harbor') || c.includes('marina')) return true;
+  }
+
+  if (allowedSet.has('federal')) {
+    if (c.includes('federal') || c.includes('fed') || c.includes('govt') || c.includes('government') || c.includes('us ') || c.includes('u.s.') || c.includes('forest service') || c.includes('park service') || c.includes('blm') || c.includes('fbi') || c.includes('tsa') || c.includes('customs') || c.includes('border patrol') || c.includes('ice ') || c.includes('dhs')) return true;
+  }
+
+  if (allowedSet.has('military')) {
+    if (c.includes('military') || c.includes('army') || c.includes('navy') || c.includes('air force') || c.includes('marines') || c.includes('coast guard') || c.includes('national guard') || c.includes('base') || c.includes('fort') || c.includes('camp ') || c.includes('afb') || c.includes('defense') || c.includes('squadron') || c.includes('wing')) return true;
+  }
+
+  if (allowedSet.has('public works')) {
+    if (c.includes('public works') || c.includes('dpw') || c.includes('street') || c.includes('road') || c.includes('highway') || c.includes('transportation') || c.includes('dot ') || c.includes('sanitation') || c.includes('garbage') || c.includes('trash') || c.includes('recycling') || c.includes('water') || c.includes('sewer') || c.includes('utility') || c.includes('engineering') || c.includes('maintenance')) return true;
+  }
+
+  if (allowedSet.has('utilities')) {
+    if (c.includes('utilit') || c.includes('power') || c.includes('electric') || c.includes('gas') || c.includes('energy') || c.includes('water') || c.includes('sewer') || c.includes('cable') || c.includes('internet') || c.includes('phone')) return true;
+  }
+
+  if (allowedSet.has('transportation')) {
+    if (c.includes('transport') || c.includes('transit') || c.includes('bus') || c.includes('taxi') || c.includes('shuttle') || c.includes('metro') || c.includes('subway') || c.includes('airport') || c.includes('uber') || c.includes('lyft') || c.includes('limo')) return true;
+  }
+
+  if (allowedSet.has('business')) {
+    if (c.includes('business') || c.includes('commercial') || c.includes('mall') || c.includes('store') || c.includes('shop') || c.includes('factory') || c.includes('plant') || c.includes('warehouse') || c.includes('hotel') || c.includes('motel') || c.includes('casino') || c.includes('resort') || c.includes('logistics') || c.includes('security')) return true;
+  }
+
+  if (allowedSet.has('hospitals')) {
+    if (c.includes('hospital') || c.includes('medical') || c.includes('clinic') || c.includes('center') || c.includes('health') || c.includes('care') || c.includes('nursing') || c.includes('trauma') || c.includes('er ') || c.includes('emergency room')) return true;
+  }
+
+  if (allowedSet.has('schools')) {
+    if (c.includes('school') || c.includes('university') || c.includes('college') || c.includes('campus') || c.includes('district') || c.includes('education') || c.includes('academy') || c.includes('student') || c.includes('faculty') || c.includes('bus barn')) return true;
+  }
+
+  if (allowedSet.has('corrections')) {
+    if (c.includes('correction') || c.includes('prison') || c.includes('jail') || c.includes('detention') || c.includes('penitentiary') || c.includes('warden') || c.includes('inmate') || c.includes('justice center')) return true;
+  }
+
+  if (allowedSet.has('security')) {
+    if (c.includes('security') || c.includes('patrol') || c.includes('guard') || c.includes('protection') || c.includes('loss prevention') || c.includes('safety')) return true;
+  }
+
+  if (allowedSet.has('multi-dispatch')) {
+    // Catch-all for dispatch centers that handle multiple agencies
+    if (c.includes('dispatch') || c.includes('communication') || c.includes('911') || c.includes('center') || c.includes('interop')) return true;
+  }
+
+  // Direct strict check as a fallback
   for (const allowed of allowedSet) {
     if (c.includes(allowed)) return true;
   }
 
-  // If "Multi-Dispatch" or "Other" is implicit, maybe allow?
-  // For now, strict-ish.
   return false;
 }
