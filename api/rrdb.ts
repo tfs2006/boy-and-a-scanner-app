@@ -510,7 +510,8 @@ function parseFrequencies(freqXml: string, relevantTagIds: Set<number>): any[] {
       alphaTag: getTextContent(itemXml, 'alpha') || '',
       tone: getTextContent(itemXml, 'tone') || '',
       colorCode: getTextContent(itemXml, 'colorCode') || '',
-      nac: '' // NAC is on trunked systems, not conventional
+      nac: getTextContent(itemXml, 'nac') || '',
+      ran: getTextContent(itemXml, 'ran') || ''
     });
   }
 
