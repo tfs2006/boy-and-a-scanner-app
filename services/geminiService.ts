@@ -117,7 +117,7 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
 
   // Cache Key is now strictly LOCATION based. We dropped the [services] part.
   // This means "84770" always maps to the same cache entry, regardless of what user checked.
-  const cacheKey = `v4_loc_${safeLocation}`.toLowerCase().replace(/\s+/g, '');
+  const cacheKey = `v5_loc_${safeLocation}`.toLowerCase().replace(/\s+/g, '');
 
   console.log(`[Cache Strategy] Checking Universal Cache for key: ${cacheKey}`);
 
@@ -186,7 +186,7 @@ export const planTrip = async (start: string, end: string, userSelectedServices:
   const safeEnd = sanitizeForPrompt(end);
 
   // Trip Cache is also location-pair based only.
-  const cacheKey = `v4_trip_${safeStart}_to_${safeEnd}`.toLowerCase().replace(/\s+/g, '');
+  const cacheKey = `v5_trip_${safeStart}_to_${safeEnd}`.toLowerCase().replace(/\s+/g, '');
 
   // 1. Check Cache
   const cached = await getFromCache(cacheKey);
