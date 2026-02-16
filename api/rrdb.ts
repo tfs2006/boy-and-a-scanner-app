@@ -460,10 +460,31 @@ function validateZipState(zip: string, stid: string): boolean {
   if (isNaN(prefix) || isNaN(s)) return false;
 
   // UT (44) starts with 84
-  if (s === 44) return prefix >= 84 && prefix <= 84;
+  if (s === 44) return prefix === 84;
 
   // WI (49) starts with 53, 54
   if (s === 49) return prefix >= 53 && prefix <= 54;
+
+  // ID (12) starts with 83
+  // Note: 830xx and 831xx are Wyoming, but we'll accept 83 for ID to be safe
+  if (s === 12) return prefix === 83;
+
+  // KS (16) starts with 66, 67
+  if (s === 16) return prefix >= 66 && prefix <= 67;
+
+  // WY (50) starts with 82, 83 (830xx, 831xx)
+  if (s === 50) return prefix === 82 || prefix === 83;
+
+  // MT (30) starts with 59
+  if (s === 30) return prefix === 59;
+  // CO (6) starts with 80, 81
+  if (s === 6) return prefix >= 80 && prefix <= 81;
+  // NV (28) starts with 88, 89
+  if (s === 28) return prefix >= 88 && prefix <= 89;
+  // OR (37) starts with 97
+  if (s === 37) return prefix === 97;
+  // WA (47) starts with 98, 99
+  if (s === 47) return prefix >= 98 && prefix <= 99;
 
   return true; // Default to true for other states
 }
