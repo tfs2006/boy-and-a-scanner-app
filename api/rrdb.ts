@@ -263,24 +263,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Step 2: getCountyInfo → get categories, subcategories, trunked system list, agencies
     // -------------------------------------------------------
     console.log(`[RR API] Step 2: getCountyInfo for ctid=${ctid}`);
-    const countyXml = await soapCall('getCountyInfo', `
-      <ctid xsi:type="xsd:int">${ctid}</ctid>
-      ${authXml}
-    `);
+
+    // Concurrently fetch County AND State info to save time
+    const [countyXml, stateXml] = await Promise.all([
+      soapCall('getCountyInfo', `
+        <ctid xsi:type="xsd:int">${ctid}</ctid>
+        ${authXml}
+      `),
+      soapCall('getStateInfo', `
+        <stid xsi:type="xsd:int">${stid}</stid>
+        ${authXml}
+      `)
+    ]);
 
     const countyName = getTextContent(countyXml, 'countyName');
     const locationName = `${countyName || city}, ${getStateName(stid)}`;
 
     // Parse categories & subcategories to get scids
-    const subcatIds = parseSubcategories(countyXml);
+    const countySubcatIds = parseSubcategories(countyXml);
+    const stateSubcatIds = parseSubcategories(stateXml); // Get all state agencies
 
-    // Parse trunked system list
+    // Parse trunked system list (County only, usually contains the relevant systems for the area)
     const trsListRaw = parseTrsList(countyXml);
 
     // -------------------------------------------------------
     // Step 3: Get conventional frequencies from subcategories
     // -------------------------------------------------------
-    console.log(`[RR API] Step 3: Fetching ${subcatIds.length} subcategory frequency sets`);
+    // Combine County + State subcategories
+    // We filter State subcategories to only include "Statewide" or major agencies if needed,
+    // but for "finding everything", we'll just fetch them all.
+    // NOTE: State subcategories can be huge. We might want to filter by name?
+    // For now, let's fetch them but limit to "Police" and "DOT" and "Federal" types if user didn't ask for everything.
+
+    const allSubcatIds = [...countySubcatIds, ...stateSubcatIds];
+    console.log(`[RR API] Step 3: Fetching ${allSubcatIds.length} subcategory frequency sets (County: ${countySubcatIds.length}, State: ${stateSubcatIds.length})`);
 
     // Collect relevant tag IDs based on user's service filter
     const relevantTagIds = new Set<number>();
@@ -295,14 +311,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           relevantTagIds.add(tagId);
         }
       }
+      // ALWAYS add Federal, Military, and Railroad to reveal "hidden" stuff
+      relevantTagIds.add(15); // Military
+      relevantTagIds.add(16); // Federal
+      relevantTagIds.add(25); // Railroad
     }
 
     // Fetch all frequencies for each subcategory (but limit concurrency)
     const agencies: any[] = [];
-    const batchSize = 5;
+    // Increase batch size slightly for performance, Vercel allows 10s execution.
+    // We need to be careful not to hit rate limits or timeouts.
+    const batchSize = 10;
 
-    for (let i = 0; i < subcatIds.length; i += batchSize) {
-      const batch = subcatIds.slice(i, i + batchSize);
+    // Limit total subcats to fetch to avoid timeouts? 
+    // State arrays can be 100+ subcats.
+    // Let's prioritize County first, then State.
+    const prioritizedSubcats = [
+      ...countySubcatIds,
+      ...stateSubcatIds.filter(s =>
+        // Filter state agencies to avoid "State Parks" in remote areas unless requested?
+        // Actually user wants "everything possible". Let's try fetching first 50 state subcats.
+        true
+      )
+    ].slice(0, 150); // Hard cap to prevent timeout
+
+    for (let i = 0; i < prioritizedSubcats.length; i += batchSize) {
+      const batch = prioritizedSubcats.slice(i, i + batchSize);
       const results = await Promise.all(batch.map(async (sc) => {
         try {
           const freqXml = await soapCall('getSubcatFreqs', `
@@ -337,34 +371,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.log(`[RR API] Step 4: Fetching ${trsListRaw.length} trunked systems`);
     const trunkedSystems: any[] = [];
 
-    // Limit to first 10 trunked systems to avoid timeout
-    const trsToFetch = trsListRaw.slice(0, 10);
+    // Increase limit to 50 to catch "hidden" or less popular systems
+    const trsToFetch = trsListRaw.slice(0, 50);
 
     for (const trs of trsToFetch) {
       try {
-        // Get system details
-        const detailXml = await soapCall('getTrsDetails', `
-          <sid xsi:type="xsd:int">${trs.sid}</sid>
-          ${authXml}
-        `);
+        // Parallelize details and sites+talkgroups? 
+        // No, details needed first? Actually details are just metadata.
+        // We can run all 3 in parallel for a single system!
+
+        const [detailXml, sitesXml, tgXml] = await Promise.all([
+          soapCall('getTrsDetails', `
+            <sid xsi:type="xsd:int">${trs.sid}</sid>
+            ${authXml}
+          `),
+          soapCall('getTrsSites', `
+            <sid xsi:type="xsd:int">${trs.sid}</sid>
+            ${authXml}
+          `),
+          soapCall('getTrsTalkgroups', `
+            <sid xsi:type="xsd:int">${trs.sid}</sid>
+            <tgCid xsi:type="xsd:int">0</tgCid>
+            <tgTag xsi:type="xsd:int">0</tgTag>
+            <tgDec xsi:type="xsd:int">0</tgDec>
+            ${authXml}
+          `)
+        ]);
+
         const sysName = getTextContent(detailXml, 'sName') || trs.sName;
         const sysType = getTextContent(detailXml, 'sType') || '';
-
-        // Get sites (includes site frequencies / control channels)
-        const sitesXml = await soapCall('getTrsSites', `
-          <sid xsi:type="xsd:int">${trs.sid}</sid>
-          ${authXml}
-        `);
         const sites = parseSites(sitesXml, ctid);
-
-        // Get talkgroups (filtered by relevant tags if possible)
-        const tgXml = await soapCall('getTrsTalkgroups', `
-          <sid xsi:type="xsd:int">${trs.sid}</sid>
-          <tgCid xsi:type="xsd:int">0</tgCid>
-          <tgTag xsi:type="xsd:int">0</tgTag>
-          <tgDec xsi:type="xsd:int">0</tgDec>
-          ${authXml}
-        `);
         const talkgroups = parseTalkgroups(tgXml, relevantTagIds);
 
         if (sites.length > 0 || talkgroups.length > 0) {
@@ -390,12 +426,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = {
       source: 'API' as const,
       locationName,
-      summary: `RadioReference verified data for ${locationName}. Found ${agencies.length} conventional agencies and ${trunkedSystems.length} trunked systems from the official database.`,
+      summary: `RadioReference verified data for ${locationName}. Found ${agencies.length} conventional agencies (including Statewide) and ${trunkedSystems.length} trunked systems.`,
       crossRef: {
         verified: true,
         confidenceScore: 100,
         sourcesChecked: 1,
-        notes: `Data retrieved directly from RadioReference.com database (County ID: ${ctid}). This is verified, authoritative source data.`
+        notes: `Data retrieved directly from RadioReference.com database (County ID: ${ctid}, State ID: ${stid}). This is verified, authoritative source data.`
       },
       agencies,
       trunkedSystems
