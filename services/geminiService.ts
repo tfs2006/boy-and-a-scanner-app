@@ -115,64 +115,103 @@ const ALL_SERVICE_TYPES: ServiceType[] = [
 export const searchFrequencies = async (locationQuery: string, userSelectedServices: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials): Promise<SearchResponse> => {
   const safeLocation = sanitizeForPrompt(locationQuery);
 
-  // Cache Key is now strictly LOCATION based. We dropped the [services] part.
-  // This means "84770" always maps to the same cache entry, regardless of what user checked.
+  // Cache Key is now strictly LOCATION based.
+  // v6 was the bug fix version.
   const cacheKey = `v6_loc_${safeLocation}`.toLowerCase().replace(/\s+/g, '');
 
-  console.log(`[Cache Strategy] Checking Universal Cache for key: ${cacheKey}`);
+  console.log(`[Hybrid Search] Starting Fresh Search for ${safeLocation}...`);
 
-  // 1. Check Cache
-  const cached = await getFromCache(cacheKey, rrCredentials);
-  if (cached) {
-    console.log(`[Cache Hit] Univeral data found for ${safeLocation}`);
-    // FILTER: We have everything, but user only asked for specific types.
-    const filteredData = filterDataByServices(cached.data, userSelectedServices);
-    return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: "Retrieved from Cache" };
+  // Parallel Fetch: AI & RadioReference
+  const promises: Promise<ScanResult | null>[] = [];
+
+  // 1. AI Search (Always run)
+  const aiPromise = (async () => {
+    try {
+      console.log(`[AI Search] Fetching for ${safeLocation}...`);
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ location: safeLocation, serviceTypes: ALL_SERVICE_TYPES })
+      });
+      if (!response.ok) throw new Error('AI Search Failed');
+      const json = await response.json();
+      const data = json.data;
+      if (data) {
+        data.source = 'AI'; // Ensure source is marked
+        // Mark inner items too
+        if (data.agencies) data.agencies.forEach((a: any) => a.origin = 'AI');
+        if (data.trunkedSystems) data.trunkedSystems.forEach((s: any) => s.origin = 'AI');
+      }
+      return data;
+    } catch (e) {
+      console.warn("AI Search Error:", e);
+      return null;
+    }
+  })();
+  promises.push(aiPromise);
+
+  // 2. RadioReference Search (Run if credentials exist)
+  let rrPromise: Promise<ScanResult | null> = Promise.resolve(null);
+  if (rrCredentials && /^\d{5}$/.test(safeLocation)) {
+    rrPromise = (async () => {
+      try {
+        console.log(`[RR API] Fetching for ${safeLocation}...`);
+        const data = await fetchFromRadioReference(safeLocation, rrCredentials, ALL_SERVICE_TYPES);
+        if (data) {
+          data.source = 'API';
+          // Mark inner items
+          if (data.agencies) data.agencies.forEach((a: any) => a.origin = 'RR');
+          if (data.trunkedSystems) data.trunkedSystems.forEach((s: any) => s.origin = 'RR');
+        }
+        return data;
+      } catch (e) {
+        console.warn("RR API Error:", e);
+        return null;
+      }
+    })();
+    promises.push(rrPromise);
+  } else {
+    promises.push(Promise.resolve(null)); // Placeholder to keep indices aligned if needed, though Promise.all works fine
   }
 
-  console.log(`[Cache Miss] Fetching MASTER RECORD for ${safeLocation} (All Service Types)...`);
+  // Await both
+  const [aiResult, rrResult] = await Promise.all([aiPromise, rrPromise]);
 
-  // 2. Fetch MASTER RECORD (All Services)
-  // We ignore userSelectedServices for the fetch, asking for EVERYTHING.
+  // Master Data will be the merged result
   let masterData: ScanResult | null = null;
-  let masterGrounding: any = null;
+  let masterGrounding: any = null; // AI grounding
   let rawText = "";
 
-  // A. Try RadioReference Direct API (if credentials exist and is ZIP)
-  const isZip = /^\d{5}$/.test(safeLocation.trim());
-  if (isZip && rrCredentials) {
-    try {
-      console.log(`[RR API] Fetching Master Record for ZIP ${safeLocation}...`);
-      masterData = await fetchFromRadioReference(safeLocation.trim(), rrCredentials, ALL_SERVICE_TYPES);
-      rawText = "Retrieved from RadioReference API";
-    } catch (rrErr: any) {
-      console.warn("RadioReference API failed, falling back to AI:", rrErr.message);
+  // MERGE LOGIC
+  if (rrResult && aiResult) {
+    console.log(`[Hybrid Merge] Merging RR (${rrResult.agencies?.length} agcy) + AI (${aiResult.agencies?.length} agcy)`);
+    masterData = mergeResults(rrResult, aiResult);
+    rawText = "Merged Hybrid Results (RR + AI)";
+  } else if (rrResult) {
+    console.log(`[Hybrid Results] RR Only`);
+    masterData = rrResult;
+    rawText = "RadioReference Results";
+  } else if (aiResult) {
+    console.log(`[Hybrid Results] AI Only`);
+    masterData = aiResult;
+    rawText = "AI Results";
+  } else {
+    console.log(`[Hybrid Search] All fetches failed. Checking Cache as backup...`);
+    // Fallback: Check Cache if everything else failed
+    const cached = await getFromCache(cacheKey, rrCredentials);
+    if (cached) {
+      console.log(`[Cache Backup] Found data.`);
+      // Filter and return immediately
+      const filteredData = filterDataByServices(cached.data, userSelectedServices);
+      return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: "Retrieved from Cache (Offline Backup)" };
     }
+    throw new Error("Unable to retrieve frequency data from any source.");
   }
 
-  // B. Fallback to AI
-  if (!masterData) {
-    console.log(`[AI Search] Fetching Master Record for ${safeLocation}...`);
-    const response = await fetch('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ location: safeLocation, serviceTypes: ALL_SERVICE_TYPES })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Search request failed');
-    }
-
-    const result = await response.json();
-    masterData = result.data;
-    masterGrounding = result.groundingChunks;
-    rawText = result.rawText;
-  }
-
-  // 3. Save MASTER RECORD to Cache
+  // 3. Save MASTER RECORD to Cache (Write-Through)
   if (masterData && (masterData.agencies?.length > 0 || masterData.trunkedSystems?.length > 0)) {
-    console.log(`[Cache Save] Storing Master Record for ${safeLocation}`);
+    console.log(`[Cache Save] Storing Master Record for ${cacheKey}`);
+    // We don't have AI grounding if RR wins/merged, but we can pass null or AI's chunks
     await saveToCache(cacheKey, masterData, masterGrounding);
   }
 
@@ -180,6 +219,50 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   const filteredData = filterDataByServices(masterData, userSelectedServices);
   return { data: filteredData, groundingChunks: masterGrounding, rawText };
 };
+
+// --- Merge Helper ---
+function mergeResults(rr: ScanResult, ai: ScanResult): ScanResult {
+  // Clone RR as base
+  const merged = JSON.parse(JSON.stringify(rr));
+  merged.source = 'API'; // Keeps 'verified' badge usually
+  merged.summary = rr.summary + " (Enhanced with AI discovery)";
+
+  // 1. Merge Agencies
+  const existingNames = new Set(merged.agencies.map((a: any) => normalizeName(a.name)));
+
+  if (ai.agencies) {
+    for (const aiAgency of ai.agencies) {
+      const norm = normalizeName(aiAgency.name);
+      // If strictly new, add it
+      if (!existingNames.has(norm)) {
+        // Potential duplicates via slightly different names? 
+        // E.g. "Bingham County Sheriff" vs "Sheriff - Bingham County"
+        // Simple strict check for now.
+        merged.agencies.push(aiAgency);
+        existingNames.add(norm); // Prevent adding twice if AI has dupes
+      }
+    }
+  }
+
+  // 2. Merge Trunked Systems
+  const existingSystems = new Set(merged.trunkedSystems.map((s: any) => normalizeName(s.name)));
+
+  if (ai.trunkedSystems) {
+    for (const aiSys of ai.trunkedSystems) {
+      const norm = normalizeName(aiSys.name);
+      if (!existingSystems.has(norm)) {
+        merged.trunkedSystems.push(aiSys);
+        existingSystems.add(norm);
+      }
+    }
+  }
+
+  return merged;
+}
+
+function normalizeName(str: string): string {
+  return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
 
 export const planTrip = async (start: string, end: string, userSelectedServices: ServiceType[]): Promise<{ trip: TripResult | null, groundingChunks: any[] }> => {
   const safeStart = sanitizeForPrompt(start);
