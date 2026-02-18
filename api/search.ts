@@ -82,12 +82,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let response;
     let usedTools = true;
 
+    // Optimization: If location is strictly "City, State", skip Google Search tool to save time (5s vs 15s)
+    // We trust that Gemini internal knowledge is sufficient for major cities.
+    const isStructuredLocation = /^[a-zA-Z\s.-]+,\s*[a-zA-Z]{2}$/.test(safeLocation);
+    const useTools = !isStructuredLocation;
+
+    if (!useTools) {
+      console.log(`[Optimization] Skipping Google Search tool for structured location: "${safeLocation}"`);
+    }
+
     try {
       response = await ai.models.generateContent({
         model: MODEL_NAME,
         contents: prompt,
         config: {
-          tools: [{ googleSearch: {} }],
+          tools: useTools ? [{ googleSearch: {} }] : [],
         },
       });
     } catch (err: any) {
@@ -103,6 +112,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         throw err;
       }
     }
+
+    // Update usedTools flag based on logic
+    usedTools = useTools;
 
     const text = response?.text || "{}";
     let data: any = null;
