@@ -229,22 +229,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       if (!c || c === '0') continue;
 
-      // Validation: Verify State ID matches ZIP prefix
-      // WI (49) starts with 53, 54. UT (44) starts with 84.
-      const isValid = validateZipState(zip, s);
-      if (isValid) {
+      // Validation: Enforce State ID matches ZIP prefix
+      // If RR returns a weird state (like KS for an ID zip), we override it if we are sure.
+      const expectedStid = inferStateIdFromZip(zip);
+
+      if (expectedStid) {
+        // If we have a definitive state for this ZIP, insist on it.
+        // If the item's stid matches, great. 
+        // If not, we might still accept it but FORCE the correct stid?
+        // Actually, if RR says it's in KS but ZIP says ID, RR might be returning a "nearest neighbor" or just wrong data for that specific zip entry.
+        // BUT, usually RR returns the correct county ID (ctid) but links it to the wrong state parent in some edge cases?
+        // Or maybe it returns a list of candidate counties and one is garbage.
+
+        if (s === expectedStid) {
+          bestMatch = { ctid: c, stid: s, city };
+          break;
+        }
+      } else {
+        // Fallback for unknown states (territories etc)
         bestMatch = { ctid: c, stid: s, city };
         break;
       }
     }
 
-    // Fallback if validation fails (just take first valid item)
+    // Fallback: If no strict match found, use the first item but FORCE the state ID if we know it.
     if (!bestMatch && zipItems.length > 0) {
       const first = zipItems[0];
       const c = getTextContent(first, 'ctid');
       const s = getTextContent(first, 'stid');
       const city = getTextContent(first, 'city');
-      if (c && c !== '0') bestMatch = { ctid: c, stid: s, city };
+
+      const expectedStid = inferStateIdFromZip(zip);
+
+      if (c && c !== '0') {
+        // Correct the State ID if we know better
+        const finalStid = expectedStid || s;
+        bestMatch = { ctid: c, stid: finalStid, city };
+        if (s !== finalStid) {
+          console.log(`[RR API] Corrected State ID from ${s} to ${finalStid} for ZIP ${zip}`);
+        }
+      }
     }
 
     if (!bestMatch) {
@@ -451,43 +475,124 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
-// Validate if the ZIP code prefix matches the expected RadioReference State ID
-function validateZipState(zip: string, stid: string): boolean {
-  if (!zip || !stid) return false;
+// Infer the correct RadioReference State ID based on ZIP code prefix
+function inferStateIdFromZip(zip: string): string | null {
+  if (!zip || zip.length < 3) return null;
   const prefix = parseInt(zip.substring(0, 2));
-  const s = parseInt(stid);
+  const prefix3 = parseInt(zip.substring(0, 3)); // For Wyoming/Idaho edge cases
 
-  if (isNaN(prefix) || isNaN(s)) return false;
+  if (isNaN(prefix)) return null;
 
-  // UT (44) starts with 84
-  if (s === 44) return prefix === 84;
+  // -- Explicit State Mapping based on ZIP Prefixes --
+  // AL (1) 35-36
+  if (prefix >= 35 && prefix <= 36) return '1';
+  // AK (2) 99
+  if (prefix === 99) return '2';
+  // AZ (3) 85-86
+  if (prefix >= 85 && prefix <= 86) return '3';
+  // AR (4) 71-72
+  if (prefix >= 71 && prefix <= 72) return '4';
+  // CA (5) 90-96
+  if (prefix >= 90 && prefix <= 96) return '5';
+  // CO (6) 80-81
+  if (prefix >= 80 && prefix <= 81) return '6';
+  // CT (7) 06
+  if (prefix === 6) return '7';
+  // DE (8) 19
+  if (prefix === 19) return '8';
+  // FL (9) 32-34
+  if (prefix >= 32 && prefix <= 34) return '9';
+  // GA (10) 30-31, 39
+  if ((prefix >= 30 && prefix <= 31) || prefix === 39) return '10';
+  // HI (11) 96
+  if (prefix === 96) return '11';
+  // ID (12) 83 (Excluding 830, 831 which are WY)
+  if (prefix === 83) {
+    if (prefix3 === 830 || prefix3 === 831) return '50'; // WY
+    return '12'; // ID
+  }
+  // IL (13) 60-62
+  if (prefix >= 60 && prefix <= 62) return '13';
+  // IN (14) 46-47
+  if (prefix >= 46 && prefix <= 47) return '14';
+  // IA (15) 50-52
+  if (prefix >= 50 && prefix <= 52) return '15';
+  // KS (16) 66-67
+  if (prefix >= 66 && prefix <= 67) return '16';
+  // KY (17) 40-42
+  if (prefix >= 40 && prefix <= 42) return '17';
+  // LA (18) 70-71
+  if (prefix >= 70 && prefix <= 71) return '18';
+  // ME (19) 03-04
+  if (prefix >= 3 && prefix <= 4) return '19';
+  // MD (20) 20-21
+  if (prefix >= 20 && prefix <= 21) return '20';
+  // MA (21) 01-02, 05
+  if ((prefix >= 1 && prefix <= 2) || prefix === 5) return '21';
+  // MI (22) 48-49
+  if (prefix >= 48 && prefix <= 49) return '22';
+  // MN (23) 55-56
+  if (prefix >= 55 && prefix <= 56) return '23';
+  // MS (24) 38-39
+  if (prefix >= 38 && prefix <= 39) return '24';
+  // MO (25) 63-65
+  if (prefix >= 63 && prefix <= 65) return '25';
+  // MT (26) 59
+  if (prefix === 59) return '26';
+  // NE (27) 68-69
+  if (prefix >= 68 && prefix <= 69) return '27';
+  // NV (28) 88-89
+  if (prefix >= 88 && prefix <= 89) return '28';
+  // NH (29) 03
+  if (prefix === 3) return '29';
+  // NJ (30) 07-08
+  if (prefix >= 7 && prefix <= 8) return '30';
+  // NM (31) 87-88
+  if (prefix >= 87 && prefix <= 88) return '31';
+  // NY (32) 10-14
+  if (prefix >= 10 && prefix <= 14) return '32';
+  // NC (33) 27-28
+  if (prefix >= 27 && prefix <= 28) return '33';
+  // ND (34) 58
+  if (prefix === 58) return '34';
+  // OH (35) 43-45
+  if (prefix >= 43 && prefix <= 45) return '35';
+  // OK (36) 73-74
+  if (prefix >= 73 && prefix <= 74) return '36';
+  // OR (37) 97
+  if (prefix === 97) return '37';
+  // PA (38) 15-19
+  if (prefix >= 15 && prefix <= 19) return '38';
+  // RI (39) 02
+  if (prefix === 2) return '39';
+  // SC (40) 29
+  if (prefix === 29) return '40';
+  // SD (41) 57
+  if (prefix === 57) return '41';
+  // TN (42) 37-38
+  if (prefix >= 37 && prefix <= 38) return '42';
+  // TX (43) 75-79
+  if (prefix >= 75 && prefix <= 79) return '43';
+  // UT (44) 84
+  if (prefix === 84) return '44';
+  // VT (45) 05
+  if (prefix === 5) return '45';
+  // VA (46) 22-24
+  if (prefix >= 22 && prefix <= 24) return '46';
+  // WA (47) 98-99
+  if (prefix >= 98 && prefix <= 99) return '47';
+  // WV (48) 24-26
+  if (prefix >= 24 && prefix <= 26) return '48';
+  // WI (49) 53-54
+  if (prefix >= 53 && prefix <= 54) return '49';
+  // WY (50) 82, 830, 831
+  if (prefix === 82 || prefix3 === 830 || prefix3 === 831) return '50';
+  // DC (51) 200
+  if (prefix3 >= 200 && prefix3 <= 205) return '51';
 
-  // WI (49) starts with 53, 54
-  if (s === 49) return prefix >= 53 && prefix <= 54;
-
-  // ID (12) starts with 83
-  // Note: 830xx and 831xx are Wyoming, but we'll accept 83 for ID to be safe
-  if (s === 12) return prefix === 83;
-
-  // KS (16) starts with 66, 67
-  if (s === 16) return prefix >= 66 && prefix <= 67;
-
-  // WY (50) starts with 82, 83 (830xx, 831xx)
-  if (s === 50) return prefix === 82 || prefix === 83;
-
-  // MT (30) starts with 59
-  if (s === 30) return prefix === 59;
-  // CO (6) starts with 80, 81
-  if (s === 6) return prefix >= 80 && prefix <= 81;
-  // NV (28) starts with 88, 89
-  if (s === 28) return prefix >= 88 && prefix <= 89;
-  // OR (37) starts with 97
-  if (s === 37) return prefix === 97;
-  // WA (47) starts with 98, 99
-  if (s === 47) return prefix >= 98 && prefix <= 99;
-
-  return true; // Default to true for other states
+  return null;
 }
+
 
 // --- XML Parsing Functions ---
 

@@ -18,6 +18,7 @@ import { getFavorites, addFavorite, removeFavorite, Favorite } from './services/
 import { SearchSuggestions, saveSearchToHistory } from './components/SearchSuggestions';
 import { MapDisplay } from './components/MapDisplay';
 import { ComparisonView } from './components/ComparisonView';
+import { SearchForm } from './components/SearchForm';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -318,49 +319,8 @@ function App() {
     });
   };
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // handleSearch removed - logic moved to SearchForm onSearch prop
 
-    // Security Layer: Input Validation
-    if (!searchQuery.trim()) {
-      setError("Please enter a valid ZIP code or Location.");
-      return;
-    }
-
-    // Allow ZIPs OR valid location strings (City, State)
-    if (!isValidLocationInput(searchQuery)) {
-      setError("Security Alert: Invalid characters detected. Please use letters, numbers, spaces, and commas only.");
-      return;
-    }
-
-    if (serviceTypes.length === 0) {
-      setError("Please select at least one service type to scan.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setGrounding(null);
-    setSearchTime(0);
-    setSearchStep('Initializing Scanner Protocol...');
-
-    const startTime = performance.now();
-
-    try {
-      // Proceed directly to AI Search to avoid CORS issues with direct API in browser environments.
-      // The AI Agent serves as the robust interface to the database.
-      await performAiSearch(searchQuery);
-
-    } catch (err: any) {
-      setError("Search failed. " + (err.message || 'Please try again.'));
-    } finally {
-      const endTime = performance.now();
-      setSearchTime((endTime - startTime) / 1000);
-      setLoading(false);
-      setSearchStep('');
-    }
-  };
 
   const performAiSearch = async (query: string) => {
     setError(null);
@@ -740,78 +700,54 @@ function App() {
 
             {/* Search Input */}
             <div className={`transition-all duration-500 ${!result && !loading ? 'mb-20' : 'mb-8'}`}>
-              <form onSubmit={handleSearch} className="max-w-lg mx-auto relative">
-                <div className="relative group">
-                  <div className="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-lg blur opacity-30 group-hover:opacity-60 transition duration-200"></div>
-                  <div className="relative flex items-center bg-[#1e293b] rounded-lg border border-slate-700 p-1">
-                    <MapPin className="ml-3 w-5 h-5 text-slate-500 hidden sm:block" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      onFocus={() => setShowSuggestions(true)}
-                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                      placeholder="Enter ZIP, City, or use GPS"
-                      className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 h-12 pl-3 font-mono-tech text-lg selection:bg-amber-500/30"
-                      disabled={loading}
-                      autoComplete="off"
-                    />
+              <SearchForm
+                onSearch={(query) => {
+                  setSearchQuery(query);
+                  // We need to trigger the search logic. The existing handleSearch expects an event, 
+                  // but we can extract the logic or just call a new function.
+                  // For now, let's adapt:
+                  if (!isValidLocationInput(query)) {
+                    setError("Security Alert: Invalid characters detected.");
+                    return;
+                  }
+                  if (serviceTypes.length === 0) {
+                    setError("Please select at least one service type to scan.");
+                    return;
+                  }
+                  setLoading(true);
+                  setError(null);
+                  setResult(null);
+                  setGrounding(null);
+                  setSearchTime(0);
+                  setSearchStep('Initializing Scanner Protocol...');
+                  const startTime = performance.now();
 
-                    <div className="flex items-center gap-1 pr-1">
-                      {/* Favorite Star Button */}
-                      {searchQuery.trim() && (
-                        <button
-                          type="button"
-                          onClick={toggleFavorite}
-                          disabled={loading}
-                          title={isSaved ? 'Remove from favorites' : 'Save to favorites'}
-                          className={`p-2 rounded transition-colors ${isSaved ? 'text-amber-400 hover:text-amber-300' : 'text-slate-500 hover:text-amber-400'}`}
-                        >
-                          <Star className={`w-5 h-5 ${isSaved ? 'fill-amber-400' : ''}`} />
-                        </button>
-                      )}
+                  // Trigger async search
+                  performAiSearch(query).catch(err => {
+                    setError("Search failed. " + (err.message || 'Please try again.'));
+                  }).finally(() => {
+                    const endTime = performance.now();
+                    setSearchTime((endTime - startTime) / 1000);
+                    setLoading(false);
+                    setSearchStep('');
+                  });
+                }}
+                loading={loading}
+                initialQuery={searchQuery}
+                onGeoLocation={handleGeoLocation}
+              />
 
-                      {/* GPS Button */}
-                      <button
-                        type="button"
-                        onClick={handleGeoLocation}
-                        disabled={loading}
-                        title="Use GPS Location"
-                        className="p-2 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded transition-colors"
-                      >
-                        <Navigation className="w-5 h-5" />
-                      </button>
-
-                      <button
-                        type="submit"
-                        disabled={loading}
-                        className="bg-cyan-600 hover:bg-cyan-500 text-white rounded-md px-6 h-10 font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-mono-tech"
-                      >
-                        {loading ? (
-                          <Loader2 className="w-5 h-5 animate-spin" />
-                        ) : (
-                          <>
-                            <span className="hidden sm:inline">SCAN</span>
-                            <Search className="w-4 h-4" />
-                          </>
-                        )}
-                      </button>
-
-                      {/* Cancel Button (Visible only when loading) */}
-                      {loading && (
-                        <button
-                          type="button"
-                          onClick={handleCancel}
-                          className="absolute right-0 top-0 h-full px-4 bg-red-900/80 hover:bg-red-800 text-white rounded-r-md flex items-center justify-center transition-all z-10 border-l border-white/10"
-                          title="Cancel Search"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </form>
+              {/* Cancel Button (Visible only when loading) */}
+              {loading && (
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="absolute right-0 top-0 h-full px-4 bg-red-900/80 hover:bg-red-800 text-white rounded-r-md flex items-center justify-center transition-all z-10 border-l border-white/10"
+                  title="Cancel Search"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
 
               {/* Service Filters */}
               <div className="max-w-lg mx-auto mt-4">
@@ -824,141 +760,150 @@ function App() {
                   {showFilters ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
 
-                {showFilters && (
-                  <div className="mt-2 p-3 bg-slate-900/50 border border-slate-700 rounded-lg animate-fade-in">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {availableTypes.map(type => (
-                        <button
-                          key={type}
-                          type="button"
-                          onClick={() => toggleService(type)}
-                          className={`flex items-center gap-2 px-2 py-1.5 rounded text-[10px] font-medium transition-all border font-mono-tech uppercase ${serviceTypes.includes(type)
-                            ? 'bg-amber-600/20 text-amber-400 border-amber-500/50'
-                            : 'bg-slate-800 text-slate-500 border-slate-700 hover:bg-slate-700 hover:text-slate-300'
-                            }`}
-                        >
-                          {serviceTypes.includes(type) ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
-                          <span className="truncate">{type}</span>
-                        </button>
-                      ))}
+                {
+                  showFilters && (
+                    <div className="mt-2 p-3 bg-slate-900/50 border border-slate-700 rounded-lg animate-fade-in">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {availableTypes.map(type => (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => toggleService(type)}
+                            className={`flex items-center gap-2 px-2 py-1.5 rounded text-[10px] font-medium transition-all border font-mono-tech uppercase ${serviceTypes.includes(type)
+                              ? 'bg-amber-600/20 text-amber-400 border-amber-500/50'
+                              : 'bg-slate-800 text-slate-500 border-slate-700 hover:bg-slate-700 hover:text-slate-300'
+                              }`}
+                          >
+                            {serviceTypes.includes(type) ? <CheckSquare className="w-3 h-3" /> : <Square className="w-3 h-3" />}
+                            <span className="truncate">{type}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )
+                }
               </div>
 
               {/* Saved Locations */}
-              {favorites.length > 0 && (
-                <div className="max-w-lg mx-auto mt-3">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
-                    <span className="text-[10px] font-mono-tech uppercase tracking-wider text-slate-500">Saved Locations</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {favorites.map(fav => (
-                      <div
-                        key={fav.id}
-                        className="group inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 bg-slate-800/50 hover:bg-amber-900/20 border border-slate-700 hover:border-amber-500/30 rounded-full transition-all cursor-pointer"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => handleFavoriteClick(fav.location_query)}
-                          className="text-xs font-mono-tech text-slate-300 hover:text-amber-400 transition-colors"
+              {
+                favorites.length > 0 && (
+                  <div className="max-w-lg mx-auto mt-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                      <span className="text-[10px] font-mono-tech uppercase tracking-wider text-slate-500">Saved Locations</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {favorites.map(fav => (
+                        <div
+                          key={fav.id}
+                          className="group inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 bg-slate-800/50 hover:bg-amber-900/20 border border-slate-700 hover:border-amber-500/30 rounded-full transition-all cursor-pointer"
                         >
-                          {fav.label || fav.location_query}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); removeFavoriteById(fav.id); }}
-                          className="p-0.5 rounded-full text-slate-600 hover:text-red-400 hover:bg-slate-700 transition-colors opacity-0 group-hover:opacity-100"
-                          title="Remove"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
+                          <button
+                            type="button"
+                            onClick={() => handleFavoriteClick(fav.location_query)}
+                            className="text-xs font-mono-tech text-slate-300 hover:text-amber-400 transition-colors"
+                          >
+                            {fav.label || fav.location_query}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeFavoriteById(fav.id); }}
+                            className="p-0.5 rounded-full text-slate-600 hover:text-red-400 hover:bg-slate-700 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Remove"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-              {error && (
-                <div className="max-w-lg mx-auto mt-4 p-3 border rounded text-sm text-center font-mono-tech animate-pulse flex flex-col items-center gap-3 bg-red-900/20 border-red-900/50 text-red-400">
-                  <div className="flex items-center gap-2 font-bold justify-center">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>{error}</span>
+                )
+              }
+              {
+                error && (
+                  <div className="max-w-lg mx-auto mt-4 p-3 border rounded text-sm text-center font-mono-tech animate-pulse flex flex-col items-center gap-3 bg-red-900/20 border-red-900/50 text-red-400">
+                    <div className="flex items-center gap-2 font-bold justify-center">
+                      <AlertCircle className="w-4 h-4" />
+                      <span>{error}</span>
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              }
             </div>
 
             {/* Loading State */}
-            {loading && !result && (
-              <div className="flex flex-col items-center justify-center py-20">
-                <div className="relative">
-                  <div className="w-20 h-20 border-4 border-slate-700 border-t-cyan-500 rounded-full animate-spin"></div>
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-cyan-500">
-                    <Database className="w-8 h-8 animate-pulse" />
+            {
+              loading && !result && (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <div className="relative">
+                    <div className="w-20 h-20 border-4 border-slate-700 border-t-cyan-500 rounded-full animate-spin"></div>
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-cyan-500">
+                      <Database className="w-8 h-8 animate-pulse" />
+                    </div>
+                  </div>
+                  <p className="mt-8 text-cyan-400 font-mono-tech text-lg animate-pulse">{searchStep || 'ACCESSING DATABASE...'}</p>
+                  <div className="flex gap-2 mt-4">
+                    <span className="w-2 h-2 bg-slate-600 rounded-full animate-bounce delay-100"></span>
+                    <span className="w-2 h-2 bg-slate-600 rounded-full animate-bounce delay-200"></span>
+                    <span className="w-2 h-2 bg-slate-600 rounded-full animate-bounce delay-300"></span>
                   </div>
                 </div>
-                <p className="mt-8 text-cyan-400 font-mono-tech text-lg animate-pulse">{searchStep || 'ACCESSING DATABASE...'}</p>
-                <div className="flex gap-2 mt-4">
-                  <span className="w-2 h-2 bg-slate-600 rounded-full animate-bounce delay-100"></span>
-                  <span className="w-2 h-2 bg-slate-600 rounded-full animate-bounce delay-200"></span>
-                  <span className="w-2 h-2 bg-slate-600 rounded-full animate-bounce delay-300"></span>
-                </div>
-              </div>
-            )}
+              )
+            }
 
             {/* Results */}
-            {result && (
-              <div className="space-y-8 animate-fade-in">
-                {result.coords && (
-                  <MapDisplay coords={result.coords} locationName={result.locationName} />
-                )}
-
-                <div className="flex flex-wrap justify-center gap-4 mb-6">
-                  {/* Pin / Compare Button */}
-                  {pinnedResult && pinnedResult.locationName !== result.locationName ? (
-                    <button
-                      onClick={() => setShowComparison(true)}
-                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-cyan-900/40 border-cyan-500/60 text-cyan-400 hover:bg-cyan-900/60 hover:text-white transition-all shadow-lg shadow-cyan-900/20 hover:scale-105"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-columns-2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><line x1="12" x2="12" y1="3" y2="21" /></svg>
-                      <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Compare with {pinnedResult.locationName.split(',')[0]}</span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setPinnedResult(pinnedResult?.locationName === result.locationName ? null : result)}
-                      className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full border transition-all shadow-lg hover:scale-105 ${pinnedResult?.locationName === result.locationName
-                        ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-900/20'
-                        : 'bg-slate-800/40 border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white'
-                        }`}
-                      title="Pin this location to compare with next search"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pin"><line x1="12" x2="12" y1="17" y2="22" /><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" /></svg>
-                      <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">{pinnedResult?.locationName === result.locationName ? 'Pinned' : 'Pin for Compare'}</span>
-                    </button>
+            {
+              result && (
+                <div className="space-y-8 animate-fade-in">
+                  {result.coords && (
+                    <MapDisplay coords={result.coords} locationName={result.locationName} />
                   )}
 
-                  <div className="w-px h-8 bg-slate-700 mx-2 hidden sm:block"></div>
+                  <div className="flex flex-wrap justify-center gap-4 mb-6">
+                    {/* Pin / Compare Button */}
+                    {pinnedResult && pinnedResult.locationName !== result.locationName ? (
+                      <button
+                        onClick={() => setShowComparison(true)}
+                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-cyan-900/40 border-cyan-500/60 text-cyan-400 hover:bg-cyan-900/60 hover:text-white transition-all shadow-lg shadow-cyan-900/20 hover:scale-105"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-columns-2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><line x1="12" x2="12" y1="3" y2="21" /></svg>
+                        <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Compare with {pinnedResult.locationName.split(',')[0]}</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setPinnedResult(pinnedResult?.locationName === result.locationName ? null : result)}
+                        className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full border transition-all shadow-lg hover:scale-105 ${pinnedResult?.locationName === result.locationName
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-900/20'
+                          : 'bg-slate-800/40 border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white'
+                          }`}
+                        title="Pin this location to compare with next search"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-pin"><line x1="12" x2="12" y1="17" y2="22" /><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" /></svg>
+                        <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">{pinnedResult?.locationName === result.locationName ? 'Pinned' : 'Pin for Compare'}</span>
+                      </button>
+                    )}
 
-                  {getSourceBadge(result.source)}
+                    <div className="w-px h-8 bg-slate-700 mx-2 hidden sm:block"></div>
 
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <button
-                      onClick={() => handleSentinelCopy(result)}
-                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-amber-900/40 border-amber-500/60 text-amber-400 hover:bg-amber-900/60 hover:text-white transition-all shadow-lg shadow-amber-900/20 hover:scale-105"
-                      title="Copy Conventional Frequencies for Uniden Sentinel (Paste)"
-                    >
-                      <Copy className="w-5 h-5" />
-                      <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Copy for Sentinel</span>
-                    </button>
-                    <button
-                      onClick={() => generateCSV(result)}
-                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-emerald-900/40 border-emerald-500/60 text-emerald-400 hover:bg-emerald-900/60 hover:text-white transition-all shadow-lg shadow-emerald-900/20 hover:scale-105"
-                    >
-                      <FileDown className="w-5 h-5" />
-                      <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">CSV</span>
-                    </button>
-                    {/* 
+                    {getSourceBadge(result.source)}
+
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        onClick={() => handleSentinelCopy(result)}
+                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-amber-900/40 border-amber-500/60 text-amber-400 hover:bg-amber-900/60 hover:text-white transition-all shadow-lg shadow-amber-900/20 hover:scale-105"
+                        title="Copy Conventional Frequencies for Uniden Sentinel (Paste)"
+                      >
+                        <Copy className="w-5 h-5" />
+                        <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Copy for Sentinel</span>
+                      </button>
+                      <button
+                        onClick={() => generateCSV(result)}
+                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-emerald-900/40 border-emerald-500/60 text-emerald-400 hover:bg-emerald-900/60 hover:text-white transition-all shadow-lg shadow-emerald-900/20 hover:scale-105"
+                      >
+                        <FileDown className="w-5 h-5" />
+                        <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">CSV</span>
+                      </button>
+                      {/* 
                     <button
                       onClick={() => exportSentinelZip(result)}
                       className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-amber-900/30 border-amber-500/50 text-amber-400 hover:bg-amber-900/50 hover:text-white transition-colors"
@@ -967,60 +912,66 @@ function App() {
                       <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">SDS100</span>
                     </button> 
                     */}
-                    <button
-                      onClick={() => setShowManual(true)}
-                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-blue-900/40 border-blue-500/60 text-blue-400 hover:bg-blue-900/60 hover:text-white transition-all shadow-lg shadow-blue-900/20 hover:scale-105"
-                    >
-                      <BookOpen className="w-5 h-5" />
-                      <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Manual</span>
-                    </button>
-                  </div>
-                </div>
-
-                <FrequencyDisplay data={result} />
-
-                {grounding && grounding.length > 0 && (
-                  <div className="mt-12 pt-8 border-t border-slate-800">
-                    <h4 className="text-sm uppercase tracking-wider text-slate-500 font-bold mb-4 font-mono-tech flex items-center gap-2">
-                      <SignalHigh className="w-4 h-4" /> Verified Sources
-                    </h4>
-                    <div className="flex flex-wrap gap-3">
-                      {grounding.map((chunk, idx) => (
-                        chunk.web?.uri ? (
-                          <a
-                            key={idx}
-                            href={chunk.web.uri}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-xs text-slate-300 transition-colors truncate max-w-xs group"
-                          >
-                            <ExternalLink className="w-3 h-3 text-cyan-500 group-hover:text-cyan-400" />
-                            <span className="truncate">{chunk.web.title || chunk.web.uri}</span>
-                          </a>
-                        ) : null
-                      ))}
+                      <button
+                        onClick={() => setShowManual(true)}
+                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-blue-900/40 border-blue-500/60 text-blue-400 hover:bg-blue-900/60 hover:text-white transition-all shadow-lg shadow-blue-900/20 hover:scale-105"
+                      >
+                        <BookOpen className="w-5 h-5" />
+                        <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Manual</span>
+                      </button>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
 
-            {showManual && result && (
-              <ProgrammingManual
-                data={result}
-                onClose={() => setShowManual(false)}
-              />
-            )}
+                  <FrequencyDisplay data={result} />
 
-            {showComparison && pinnedResult && result && (
-              <ComparisonView
-                left={pinnedResult}
-                right={result}
-                onClose={() => setShowComparison(false)}
-              />
-            )}
+                  {grounding && grounding.length > 0 && (
+                    <div className="mt-12 pt-8 border-t border-slate-800">
+                      <h4 className="text-sm uppercase tracking-wider text-slate-500 font-bold mb-4 font-mono-tech flex items-center gap-2">
+                        <SignalHigh className="w-4 h-4" /> Verified Sources
+                      </h4>
+                      <div className="flex flex-wrap gap-3">
+                        {grounding.map((chunk, idx) => (
+                          chunk.web?.uri ? (
+                            <a
+                              key={idx}
+                              href={chunk.web.uri}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-xs text-slate-300 transition-colors truncate max-w-xs group"
+                            >
+                              <ExternalLink className="w-3 h-3 text-cyan-500 group-hover:text-cyan-400" />
+                              <span className="truncate">{chunk.web.title || chunk.web.uri}</span>
+                            </a>
+                          ) : null
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            }
+
+            {
+              showManual && result && (
+                <ProgrammingManual
+                  data={result}
+                  onClose={() => setShowManual(false)}
+                />
+              )
+            }
+
+            {
+              showComparison && pinnedResult && result && (
+                <ComparisonView
+                  left={pinnedResult}
+                  right={result}
+                  onClose={() => setShowComparison(false)}
+                />
+              )
+            }
           </>
-        )}
+        )
+        }
       </main>
 
       <footer className="fixed bottom-0 w-full bg-[#0f172a] border-t border-slate-800 py-2 text-center z-40">
