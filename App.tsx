@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy } from 'lucide-react';
+import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
 import { SearchResponse, ScanResult, ServiceType } from './types';
@@ -43,9 +43,17 @@ function App() {
   const [showFilters, setShowFilters] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+
   // Comparison State
   const [pinnedResult, setPinnedResult] = useState<ScanResult | null>(null);
   const [showComparison, setShowComparison] = useState(false);
+
+  // Theme State
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
 
   const availableTypes: ServiceType[] = [
     'Police',
@@ -454,7 +462,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-slate-200 pb-20">
+    <div className="min-h-screen theme-bg-main theme-text-main pb-20 selection:bg-amber-500/30 transition-colors duration-300">
       {/* Navbar */}
       <nav className="sticky top-0 z-50 bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-800 select-none">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -470,6 +478,14 @@ function App() {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Theme Toggle */}
+              <button
+                onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+                className="p-2 rounded-full hover:bg-slate-800 text-slate-400 hover:text-cyan-400 transition-colors"
+                title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+              >
+                {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              </button>
 
               {/* External Links Toolbar */}
               <div className="flex items-center gap-1 mr-1 sm:mr-3 border-r border-slate-700 pr-2 sm:pr-4">
@@ -912,8 +928,8 @@ function App() {
                     <button
                       onClick={() => setPinnedResult(pinnedResult?.locationName === result.locationName ? null : result)}
                       className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full border transition-all shadow-lg hover:scale-105 ${pinnedResult?.locationName === result.locationName
-                          ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-900/20'
-                          : 'bg-slate-800/40 border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white'
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-900/20'
+                        : 'bg-slate-800/40 border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white'
                         }`}
                       title="Pin this location to compare with next search"
                     >

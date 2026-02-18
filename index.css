@@ -66,3 +66,54 @@
   user-select: none;
   -webkit-user-select: none;
 }
+
+:root {
+  --bg-main: #0f172a;
+  --bg-card: #1e293b;
+  --bg-element: #1e293b;
+  --text-main: #e2e8f0;
+  --text-muted: #94a3b8;
+  --border-color: #334155;
+  --input-bg: #0f172a;
+}
+
+[data-theme='light'] {
+  --bg-main: #f8fafc;
+  /* slate-50 */
+  --bg-card: #ffffff;
+  --bg-element: #f1f5f9;
+  /* slate-100 */
+  --text-main: #0f172a;
+  /* slate-900 */
+  --text-muted: #64748b;
+  /* slate-500 */
+  --border-color: #cbd5e1;
+  /* slate-300 */
+  --input-bg: #e2e8f0;
+  /* slate-200 */
+}
+
+.theme-bg-main {
+  background-color: var(--bg-main);
+  transition: background-color 0.3s;
+}
+
+.theme-bg-card {
+  background-color: var(--bg-card);
+  transition: background-color 0.3s;
+}
+
+.theme-text-main {
+  color: var(--text-main);
+  transition: color 0.3s;
+}
+
+.theme-text-muted {
+  color: var(--text-muted);
+  transition: color 0.3s;
+}
+
+.theme-border {
+  border-color: var(--border-color);
+  transition: border-color 0.3s;
+}
