@@ -56,6 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     {
       "source": "AI",
       "locationName": "County, State",
+      "coords": { "lat": 0.0, "lng": 0.0 },
       "summary": "Overview...",
       "crossRef": { "verified": true, "confidenceScore": 95, "sourcesChecked": 3, "notes": "Verified location as [City, State] via search." },
       "agencies": [

@@ -52,6 +52,7 @@ export interface CrossRefData {
 export interface ScanResult {
   source: 'API' | 'AI' | 'Cache';
   locationName: string;
+  coords?: { lat: number, lng: number };
   summary: string;
   crossRef?: CrossRefData;
   agencies: Agency[];

@@ -16,6 +16,7 @@ import { generateSentinelExport } from './utils/exportUtils';
 import { exportSentinelZip } from './utils/sentinelExporter';
 import { getFavorites, addFavorite, removeFavorite, Favorite } from './services/favoritesService';
 import { SearchSuggestions, saveSearchToHistory } from './components/SearchSuggestions';
+import { MapDisplay } from './components/MapDisplay';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -888,6 +889,10 @@ function App() {
             {/* Results */}
             {result && (
               <div className="space-y-8 animate-fade-in">
+                {result.coords && (
+                  <MapDisplay coords={result.coords} locationName={result.locationName} />
+                )}
+
                 <div className="flex flex-wrap justify-center gap-4 mb-6">
                   {getSourceBadge(result.source)}
 
