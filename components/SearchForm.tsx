@@ -6,6 +6,7 @@ interface SearchFormProps {
     loading: boolean;
     initialQuery?: string;
     onGeoLocation?: () => void;
+    onCancel?: () => void;
 }
 
 const US_STATES = [
@@ -16,7 +17,7 @@ const US_STATES = [
     'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
 ];
 
-export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation }: SearchFormProps) {
+export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation, onCancel }: SearchFormProps) {
     const [mode, setMode] = useState<'simple' | 'advanced'>('simple');
     const [simpleQuery, setSimpleQuery] = useState(initialQuery);
 
@@ -115,19 +116,30 @@ export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation
                                         <Navigation className="w-5 h-5" />
                                     </button>
                                 )}
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg px-6 h-10 font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-mono-tech tracking-wide ml-1"
-                                >
-                                    {loading ? (
-                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                    ) : (
-                                        <>
-                                            <span className="hidden sm:inline">SCAN</span> <Search className="w-4 h-4" />
-                                        </>
-                                    )}
-                                </button>
+                                {loading && onCancel ? (
+                                    <button
+                                        type="button"
+                                        onClick={onCancel}
+                                        className="bg-red-900/80 hover:bg-red-800 text-white rounded-lg px-6 h-10 font-bold transition-all flex items-center gap-2 font-mono-tech tracking-wide ml-1 border border-red-500/30"
+                                    >
+                                        <X className="w-4 h-4" />
+                                        <span className="hidden sm:inline">CANCEL</span>
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="submit"
+                                        disabled={loading}
+                                        className="bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg px-6 h-10 font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-mono-tech tracking-wide ml-1"
+                                    >
+                                        {loading ? (
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                        ) : (
+                                            <>
+                                                <span className="hidden sm:inline">SCAN</span> <Search className="w-4 h-4" />
+                                            </>
+                                        )}
+                                    </button>
+                                )}
                             </div>
                         </div>
                     ) : (
@@ -197,19 +209,30 @@ export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation
                                 <button type="button" onClick={clearAdvanced} className="text-xs text-slate-500 hover:text-red-400 font-mono-tech transition-colors uppercase tracking-wider font-bold px-2 py-1 rounded hover:bg-slate-800">
                                     Clear Fields
                                 </button>
-                                <button
-                                    type="submit"
-                                    disabled={loading || (!zip && !state && !city && !county)}
-                                    className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-lg px-6 py-2 font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-mono-tech tracking-wide shadow-lg shadow-cyan-900/20"
-                                >
-                                    {loading ? (
-                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                    ) : (
-                                        <>
-                                            SEARCH DATABASE <Search className="w-4 h-4 ml-1" />
-                                        </>
-                                    )}
-                                </button>
+                                {loading && onCancel ? (
+                                    <button
+                                        type="button"
+                                        onClick={onCancel}
+                                        className="bg-red-900/80 hover:bg-red-800 text-white rounded-lg px-6 py-2 font-bold transition-all flex items-center gap-2 font-mono-tech tracking-wide shadow-lg shadow-red-900/20 border border-red-500/30"
+                                    >
+                                        <X className="w-4 h-4" />
+                                        CANCEL SEARCH
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="submit"
+                                        disabled={loading || (!zip && !state && !city && !county)}
+                                        className="bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-lg px-6 py-2 font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-mono-tech tracking-wide shadow-lg shadow-cyan-900/20"
+                                    >
+                                        {loading ? (
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                        ) : (
+                                            <>
+                                                SEARCH DATABASE <Search className="w-4 h-4 ml-1" />
+                                            </>
+                                        )}
+                                    </button>
+                                )}
                             </div>
                         </div>
                     )}

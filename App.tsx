@@ -735,19 +735,8 @@ function App() {
                 loading={loading}
                 initialQuery={searchQuery}
                 onGeoLocation={handleGeoLocation}
+                onCancel={handleCancel}
               />
-
-              {/* Cancel Button (Visible only when loading) */}
-              {loading && (
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  className="absolute right-0 top-0 h-full px-4 bg-red-900/80 hover:bg-red-800 text-white rounded-r-md flex items-center justify-center transition-all z-10 border-l border-white/10"
-                  title="Cancel Search"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              )}
 
               {/* Service Filters */}
               <div className="max-w-lg mx-auto mt-4">
