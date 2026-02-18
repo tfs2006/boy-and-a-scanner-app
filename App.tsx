@@ -15,6 +15,7 @@ import { generateCSV } from './utils/csvGenerator';
 import { generateSentinelExport } from './utils/exportUtils';
 import { exportSentinelZip } from './utils/sentinelExporter';
 import { getFavorites, addFavorite, removeFavorite, Favorite } from './services/favoritesService';
+import { SearchSuggestions, saveSearchToHistory } from './components/SearchSuggestions';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -38,6 +39,7 @@ function App() {
   // Service Filters
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(['Police', 'Fire', 'EMS']);
   const [showFilters, setShowFilters] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const availableTypes: ServiceType[] = [
     'Police',
@@ -149,6 +151,7 @@ function App() {
     setSearchQuery(query);
     setResult(null);
     setError(null);
+    setShowSuggestions(false);
     // Auto-trigger search
     setTimeout(() => {
       const form = document.querySelector('form');
@@ -240,7 +243,7 @@ function App() {
 
     const startTime = performance.now();
 
-    navigator.geolocation.getCurrentPosition(
+    const geoId = navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
         const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
@@ -248,6 +251,9 @@ function App() {
         try {
           await performAiSearch(coordString);
         } catch (err: any) {
+          // If user cancelled manually, we might want to ignore this, but usually performAiSearch handles it.
+          // However, if we cleared loading state on cancel, this might set it back?
+          // We'll check if loading is still true before setting error.
           setError("Search failed. " + (err.message || 'Please try again.'));
         } finally {
           const endTime = performance.now();
@@ -259,10 +265,29 @@ function App() {
       (err) => {
         setLoading(false);
         setSearchStep('');
-        setError("GPS Access Denied. Please manually enter your location.");
+        if (err.code === err.PERMISSION_DENIED) {
+          setError("GPS Access Denied. Please manually enter your location.");
+        } else if (err.code === err.TIMEOUT) {
+          setError("GPS Timeout. Please try again or enter location manually.");
+        } else {
+          setError("GPS Error: " + err.message);
+        }
         console.error(err);
-      }
+      },
+      { timeout: 10000, enableHighAccuracy: true }
     );
+
+    // Store geoId if we want to cancel? 
+    // React state for cancelling requires extensive Refactoring. 
+    // Ideally we just provide a 'Cancel' button that sets loading=false and ignores the result.
+  };
+
+  const handleCancel = () => {
+    setLoading(false);
+    setSearchStep('');
+    setError(null);
+    // Note: We can't easily cancel the in-flight fetch or geolocation without AbortController, 
+    // but we can reset the UI state so the user isn't stuck.
   };
 
   const handleSentinelCopy = (data: ScanResult) => {
@@ -336,12 +361,25 @@ function App() {
       if (response.data) {
         setResult(response.data);
         setGrounding(response.groundingChunks);
+        saveSearchToHistory(query);
         setTimeout(updateStats, 1000);
       } else {
-        setError("Could not extract radio data for this location.");
+        // Enhance error for ambiguous locations
+        if (!isZip && !query.includes(',')) {
+          setError(`Could not pinpoint "${query}". Try adding a State (e.g., "${query}, CA") or ZIP code.`);
+        } else {
+          setError("Could not extract radio data for this location.");
+        }
       }
     } catch (e: any) {
-      setError(e.message || "AI Search failed.");
+      const msg = e.message || "AI Search failed.";
+      if (msg.includes("Unable to retrieve")) {
+        if (!isZip && !query.includes(',')) {
+          setError(`Search failed. Try adding a State (e.g., "${query}, CA") for better accuracy.`);
+          return;
+        }
+      }
+      setError(msg);
     }
   };
 
@@ -410,9 +448,9 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f172a] text-slate-200 pb-20 selection:bg-amber-500/30">
+    <div className="min-h-screen bg-[#0f172a] text-slate-200 pb-20">
       {/* Navbar */}
-      <nav className="sticky top-0 z-50 bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-800">
+      <nav className="sticky top-0 z-50 bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-800 select-none">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-2">
@@ -600,7 +638,7 @@ function App() {
       )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 selection:bg-amber-500/30">
 
         {mode === 'trip' ? (
           <TripPlanner />
@@ -689,9 +727,12 @@ function App() {
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
+                      onFocus={() => setShowSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                       placeholder="Enter ZIP, City, or use GPS"
-                      className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 h-12 pl-3 font-mono-tech text-lg"
+                      className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 h-12 pl-3 font-mono-tech text-lg selection:bg-amber-500/30"
                       disabled={loading}
+                      autoComplete="off"
                     />
 
                     <div className="flex items-center gap-1 pr-1">
@@ -733,6 +774,18 @@ function App() {
                           </>
                         )}
                       </button>
+
+                      {/* Cancel Button (Visible only when loading) */}
+                      {loading && (
+                        <button
+                          type="button"
+                          onClick={handleCancel}
+                          className="absolute right-0 top-0 h-full px-4 bg-red-900/80 hover:bg-red-800 text-white rounded-r-md flex items-center justify-center transition-all z-10 border-l border-white/10"
+                          title="Cancel Search"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -841,18 +894,18 @@ function App() {
                   <div className="flex flex-wrap items-center justify-center gap-2">
                     <button
                       onClick={() => handleSentinelCopy(result)}
-                      className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-amber-900/30 border-amber-500/50 text-amber-400 hover:bg-amber-900/50 hover:text-white transition-colors"
+                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-amber-900/40 border-amber-500/60 text-amber-400 hover:bg-amber-900/60 hover:text-white transition-all shadow-lg shadow-amber-900/20 hover:scale-105"
                       title="Copy Conventional Frequencies for Uniden Sentinel (Paste)"
                     >
-                      <Copy className="w-4 h-4" />
-                      <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Copy for Sentinel</span>
+                      <Copy className="w-5 h-5" />
+                      <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Copy for Sentinel</span>
                     </button>
                     <button
                       onClick={() => generateCSV(result)}
-                      className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-emerald-900/30 border-emerald-500/50 text-emerald-400 hover:bg-emerald-900/50 hover:text-white transition-colors"
+                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-emerald-900/40 border-emerald-500/60 text-emerald-400 hover:bg-emerald-900/60 hover:text-white transition-all shadow-lg shadow-emerald-900/20 hover:scale-105"
                     >
-                      <FileDown className="w-4 h-4" />
-                      <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">CSV</span>
+                      <FileDown className="w-5 h-5" />
+                      <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">CSV</span>
                     </button>
                     {/* 
                     <button
@@ -865,10 +918,10 @@ function App() {
                     */}
                     <button
                       onClick={() => setShowManual(true)}
-                      className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-blue-900/30 border-blue-500/50 text-blue-400 hover:bg-blue-900/50 hover:text-white transition-colors"
+                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-blue-900/40 border-blue-500/60 text-blue-400 hover:bg-blue-900/60 hover:text-white transition-all shadow-lg shadow-blue-900/20 hover:scale-105"
                     >
-                      <BookOpen className="w-4 h-4" />
-                      <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Manual</span>
+                      <BookOpen className="w-5 h-5" />
+                      <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Manual</span>
                     </button>
                   </div>
                 </div>

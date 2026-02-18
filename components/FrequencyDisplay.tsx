@@ -10,10 +10,10 @@ interface FrequencyDisplayProps {
 const AgencyCard: React.FC<{ agency: Agency }> = ({ agency }) => {
   const getIcon = (cat: string) => {
     const c = (cat || '').toLowerCase();
-    if (c.includes('police') || c.includes('sheriff') || c.includes('law')) return <Shield className="w-5 h-5 text-blue-400" />;
-    if (c.includes('fire')) return <Flame className="w-5 h-5 text-red-400" />;
-    if (c.includes('ems') || c.includes('medical')) return <Activity className="w-5 h-5 text-green-400" />;
-    return <Radio className="w-5 h-5 text-gray-400" />;
+    if (c.includes('police') || c.includes('sheriff') || c.includes('law')) return <Shield className="w-5 h-5 text-blue-400" title="Law Enforcement" />;
+    if (c.includes('fire')) return <Flame className="w-5 h-5 text-red-400" title="Fire / Rescue" />;
+    if (c.includes('ems') || c.includes('medical')) return <Activity className="w-5 h-5 text-green-400" title="EMS / Medical" />;
+    return <Radio className="w-5 h-5 text-gray-400" title="Other Service" />;
   };
 
   const freqs = agency.frequencies || [];
@@ -86,7 +86,7 @@ const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
     <div className="bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden mb-6 shadow-lg backdrop-blur-sm">
       <div className="p-4 bg-gradient-to-r from-slate-800 to-slate-900 border-b border-slate-700 flex flex-col gap-4">
         <div className="flex items-center gap-3">
-          <Hash className="w-5 h-5 text-purple-400" />
+          <Hash className="w-5 h-5 text-purple-400" title="Trunked System" />
           <div>
             <h3 className="text-lg font-bold text-slate-100 font-mono-tech uppercase tracking-wider">{system.name}</h3>
             <p className="text-xs text-purple-300 font-mono-tech">{system.type} • {system.location}</p>
@@ -157,7 +157,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data }) => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-slate-800/30 border border-slate-700/50 rounded-lg">
         <div>
           <h2 className="text-2xl font-bold text-white mb-1 flex items-center gap-2">
-            <Zap className="w-6 h-6 text-amber-400 fill-amber-400/20" />
+            <Zap className="w-6 h-6 text-amber-400 fill-amber-400/20" title="Location Query" />
             {data.locationName}
           </h2>
           <p className="text-slate-400 max-w-2xl text-sm leading-relaxed">{data.summary}</p>
