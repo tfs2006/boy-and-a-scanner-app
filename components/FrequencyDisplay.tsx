@@ -27,7 +27,7 @@ const AgencyCard: React.FC<{ agency: Agency }> = ({ agency }) => {
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm text-slate-300">
-          <thead className="text-xs uppercase bg-slate-900/50 text-slate-400 font-mono-tech">
+          <thead className="text-xs uppercase bg-slate-900/50 text-slate-400 font-mono-tech hidden md:table-header-group">
             <tr>
               <th className="px-4 py-3">Freq (MHz)</th>
               <th className="px-4 py-3">Tone</th>
@@ -38,33 +38,61 @@ const AgencyCard: React.FC<{ agency: Agency }> = ({ agency }) => {
           </thead>
           <tbody className="divide-y divide-slate-700/50">
             {freqs.map((freq, idx) => (
-              <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
-                <td className="px-4 py-3 font-mono-tech text-amber-400 font-bold">{freq.freq}</td>
-                <td className="px-4 py-3 font-mono-tech text-slate-400">
-                  {freq.tone || 'CSQ'}
-                  {/* Digital Badges */}
-                  {freq.colorCode && (
-                    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-900/50 text-purple-400 border border-purple-500/30" title="DMR Color Code">
-                      CC:{freq.colorCode}
-                    </span>
-                  )}
-                  {freq.nac && (
-                    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-900/50 text-blue-400 border border-blue-500/30" title="P25 NAC">
-                      NAC:{freq.nac}
-                    </span>
-                  )}
-                  {freq.ran && (
-                    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-400 border border-orange-500/30" title="NXDN RAN">
-                      RAN:{freq.ran}
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 font-medium text-slate-200">{freq.alphaTag || '-'}</td>
-                <td className="px-4 py-3 font-mono-tech text-xs">
-                  <span className="px-1.5 py-0.5 rounded bg-slate-700 text-cyan-400 border border-slate-600">{freq.mode}</span>
-                </td>
-                <td className="px-4 py-3 text-slate-400">{freq.description}</td>
-              </tr>
+              <React.Fragment key={idx}>
+                {/* Desktop Row */}
+                <tr className="hidden md:table-row hover:bg-slate-700/30 transition-colors">
+                  <td className="px-4 py-3 font-mono-tech text-amber-400 font-bold">{freq.freq}</td>
+                  <td className="px-4 py-3 font-mono-tech text-slate-400">
+                    {freq.tone || 'CSQ'}
+                    {/* Digital Badges */}
+                    {freq.colorCode && (
+                      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-900/50 text-purple-400 border border-purple-500/30" title="DMR Color Code">
+                        CC:{freq.colorCode}
+                      </span>
+                    )}
+                    {freq.nac && (
+                      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-900/50 text-blue-400 border border-blue-500/30" title="P25 NAC">
+                        NAC:{freq.nac}
+                      </span>
+                    )}
+                    {freq.ran && (
+                      <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-orange-900/50 text-orange-400 border border-orange-500/30" title="NXDN RAN">
+                        RAN:{freq.ran}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 font-medium text-slate-200">{freq.alphaTag || '-'}</td>
+                  <td className="px-4 py-3 font-mono-tech text-xs">
+                    <span className="px-1.5 py-0.5 rounded bg-slate-700 text-cyan-400 border border-slate-600">{freq.mode}</span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-400">{freq.description}</td>
+                </tr>
+
+                {/* Mobile Card View */}
+                <tr className="md:hidden border-b border-slate-700/50">
+                  <td colSpan={5} className="p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex flex-col">
+                        <span className="text-xl font-mono-tech font-bold text-amber-400">{freq.freq}</span>
+                        <span className="text-xs font-mono-tech text-slate-500">{freq.mode} {freq.tone ? `• ${freq.tone}` : ''}</span>
+                      </div>
+                      {(freq.colorCode || freq.nac || freq.ran) && (
+                        <div className="flex flex-col items-end gap-1">
+                          {freq.colorCode && <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-400 border border-purple-500/30 font-bold">CC:{freq.colorCode}</span>}
+                          {freq.nac && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-400 border border-blue-500/30 font-bold">NAC:{freq.nac}</span>}
+                          {freq.ran && <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-900/50 text-orange-400 border border-orange-500/30 font-bold">RAN:{freq.ran}</span>}
+                        </div>
+                      )}
+                    </div>
+                    <div className="mb-1">
+                      <span className="font-bold text-slate-200 block">{freq.alphaTag || 'No Tag'}</span>
+                    </div>
+                    <div className="text-sm text-slate-400">
+                      {freq.description}
+                    </div>
+                  </td>
+                </tr>
+              </React.Fragment>
             ))}
             {freqs.length === 0 && (
               <tr>
@@ -117,7 +145,7 @@ const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
 
       <div className="overflow-x-auto max-h-96 overflow-y-auto">
         <table className="w-full text-left text-sm text-slate-300">
-          <thead className="text-xs uppercase bg-slate-900/50 text-slate-400 sticky top-0 bg-slate-900 font-mono-tech z-10">
+          <thead className="text-xs uppercase bg-slate-900/50 text-slate-400 sticky top-0 bg-slate-900 font-mono-tech z-10 hidden md:table-header-group">
             <tr>
               <th className="px-4 py-3">Dec ID</th>
               <th className="px-4 py-3">Mode</th>
@@ -128,17 +156,41 @@ const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
           </thead>
           <tbody className="divide-y divide-slate-700/50">
             {talkgroups.map((tg, idx) => (
-              <tr key={idx} className="hover:bg-slate-700/30 transition-colors">
-                <td className="px-4 py-3 font-mono-tech text-purple-300 font-bold">{tg.dec}</td>
-                <td className="px-4 py-3 font-mono-tech text-xs">{tg.mode}</td>
-                <td className="px-4 py-3 font-medium text-slate-200">{tg.alphaTag}</td>
-                <td className="px-4 py-3">
-                  <span className="text-xs px-2 py-0.5 rounded-full border border-slate-600 bg-slate-800 text-slate-400">
-                    {tg.tag}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-slate-400">{tg.description}</td>
-              </tr>
+              <React.Fragment key={idx}>
+                {/* Desktop Row */}
+                <tr className="hidden md:table-row hover:bg-slate-700/30 transition-colors">
+                  <td className="px-4 py-3 font-mono-tech text-purple-300 font-bold">{tg.dec}</td>
+                  <td className="px-4 py-3 font-mono-tech text-xs">{tg.mode}</td>
+                  <td className="px-4 py-3 font-medium text-slate-200">{tg.alphaTag}</td>
+                  <td className="px-4 py-3">
+                    <span className="text-xs px-2 py-0.5 rounded-full border border-slate-600 bg-slate-800 text-slate-400">
+                      {tg.tag}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-400">{tg.description}</td>
+                </tr>
+
+                {/* Mobile Card */}
+                <tr className="md:hidden border-b border-slate-700/50">
+                  <td colSpan={5} className="p-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg font-mono-tech font-bold text-purple-300">ID: {tg.dec}</span>
+                        <span className="text-xs font-mono-tech text-slate-500 px-1.5 py-0.5 rounded border border-slate-700">{tg.mode}</span>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-600 bg-slate-800 text-slate-400 uppercase">
+                        {tg.tag}
+                      </span>
+                    </div>
+                    <div className="mb-1">
+                      <span className="font-bold text-slate-200 block">{tg.alphaTag}</span>
+                    </div>
+                    <div className="text-sm text-slate-400">
+                      {tg.description}
+                    </div>
+                  </td>
+                </tr>
+              </React.Fragment>
             ))}
           </tbody>
         </table>
