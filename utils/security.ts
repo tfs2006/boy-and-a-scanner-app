@@ -10,10 +10,10 @@
 // Regex for strict 5-digit US ZIP code
 const ZIP_REGEX = /^\d{5}$/;
 
-// Regex for safe location inputs (City, State)
-// Allows letters, numbers, spaces, commas, periods, hyphens.
+// Regex for safe location inputs (City, State, GPS coordinates)
+// Allows letters, numbers, spaces, commas, periods, hyphens, colons.
 // Blocks symbols often used in prompt injection ({} [] < > " ' ` ; / \)
-const SAFE_LOCATION_REGEX = /^[a-zA-Z0-9\s,.-]+$/;
+const SAFE_LOCATION_REGEX = /^[a-zA-Z0-9\s,.:-]+$/;
 
 /**
  * Validates if the input is a strictly formatted 5-digit US ZIP code.

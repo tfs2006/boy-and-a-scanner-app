@@ -31,8 +31,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const prompt = `
     You are an intelligent interface for the RadioReference Database.
     Task: Retrieve the official radio frequency data for Location: "${safeLocation}".
-    IMPORTANT: If the location is a ZIP CODE, first identify the County and State.
     
+    CRITICAL: VERIFY THE LOCATION FIRST.
+    1. If the input is a ZIP CODE (e.g., "${safeLocation}"), use Google Search to confirm the exact City, County, and STATE.
+       - Example: "84770" is Washington, UTAH (UT). Do NOT confuse it with Washington, WI or DC.
+       - If the user provides a City/State, ensure it exists.
+    2. Once the location is verified, retrieve radio data for that SPECIFIC location.
+
     SCOPE: ${safeServices.join(', ')}.
     
     CRITICAL INCLUSION RULES:
@@ -51,8 +56,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     {
       "source": "AI",
       "locationName": "County, State",
+      "coords": { "lat": 0.0, "lng": 0.0 },
       "summary": "Overview...",
-      "crossRef": { "verified": true, "confidenceScore": 95, "sourcesChecked": 3, "notes": "Verified." },
+      "crossRef": { "verified": true, "confidenceScore": 95, "sourcesChecked": 3, "notes": "Verified location as [City, State] via search." },
       "agencies": [
         {
           "name": "Agency Name",
@@ -76,12 +82,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let response;
     let usedTools = true;
 
+    // Optimization: If location is strictly "City, State", skip Google Search tool to save time (5s vs 15s)
+    // We trust that Gemini internal knowledge is sufficient for major cities.
+    const isStructuredLocation = /^[a-zA-Z\s.-]+,\s*[a-zA-Z]{2}$/.test(safeLocation);
+    const useTools = !isStructuredLocation;
+
+    if (!useTools) {
+      console.log(`[Optimization] Skipping Google Search tool for structured location: "${safeLocation}"`);
+    }
+
     try {
       response = await ai.models.generateContent({
         model: MODEL_NAME,
         contents: prompt,
         config: {
-          tools: [{ googleSearch: {} }],
+          tools: useTools ? [{ googleSearch: {} }] : [],
         },
       });
     } catch (err: any) {
@@ -98,6 +113,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    // Update usedTools flag based on logic
+    usedTools = useTools;
+
     const text = response?.text || "{}";
     let data: any = null;
 
@@ -113,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const start = text.indexOf('{');
       const end = text.lastIndexOf('}');
       if (start !== -1 && end !== -1) {
-        try { data = JSON.parse(text.substring(start, end + 1)); } catch (e2) {}
+        try { data = JSON.parse(text.substring(start, end + 1)); } catch (e2) { }
       }
     }
 
