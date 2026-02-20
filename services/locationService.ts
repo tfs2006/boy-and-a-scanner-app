@@ -28,7 +28,7 @@ export const resolveLocationDetails = async (query: string): Promise<ResolvedLoc
     // 2. AI Resolution for Text (e.g., "St George", "Washington County UT")
     // We need to know: "What County is this?" and "What are ALL ZIPs in that County?"
     try {
-        const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
         if (!apiKey) throw new Error("Missing API Key for Location Service");
 
         const ai = new GoogleGenAI({ apiKey });

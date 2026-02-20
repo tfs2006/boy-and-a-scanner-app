@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
@@ -172,11 +172,22 @@ function App() {
     setResult(null);
     setError(null);
     setShowSuggestions(false);
-    // Auto-trigger search
-    setTimeout(() => {
-      const form = document.querySelector('form');
-      if (form) form.requestSubmit();
-    }, 100);
+    // Directly trigger search without fragile DOM manipulation
+    if (!isValidLocationInput(query)) return;
+    if (serviceTypes.length === 0) return;
+    setLoading(true);
+    setGrounding(null);
+    setSearchTime(0);
+    setSearchStep('Initializing Scanner Protocol...');
+    const startTime = performance.now();
+    performAiSearch(query).catch(err => {
+      setError("Search failed. " + (err.message || 'Please try again.'));
+    }).finally(() => {
+      const endTime = performance.now();
+      setSearchTime((endTime - startTime) / 1000);
+      setLoading(false);
+      setSearchStep('');
+    });
   };
 
   const removeFavoriteById = async (id: string) => {
@@ -766,6 +777,14 @@ function App() {
                 onCancel={handleCancel}
               />
 
+              {/* Recent Search History Suggestions */}
+              <div className="relative max-w-lg mx-auto">
+                <SearchSuggestions
+                  visible={!result && !loading}
+                  onSelect={(query) => handleFavoriteClick(query)}
+                />
+              </div>
+
               {/* Service Filters */}
               <div className="max-w-lg mx-auto mt-4">
                 <button
@@ -899,6 +918,21 @@ function App() {
                         <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">{pinnedResult?.locationName === result.locationName ? 'Pinned' : 'Pin for Compare'}</span>
                       </button>
                     )}
+
+                    <div className="w-px h-8 bg-slate-700 mx-2 hidden sm:block"></div>
+
+                    {/* Save / Favorite Button */}
+                    <button
+                      onClick={toggleFavorite}
+                      className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full border transition-all shadow-lg hover:scale-105 ${isSaved
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-900/20'
+                        : 'bg-slate-800/40 border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white'
+                        }`}
+                      title={isSaved ? 'Remove from saved locations' : 'Save this location'}
+                    >
+                      <Star className={`w-5 h-5 ${isSaved ? 'fill-amber-400' : ''}`} />
+                      <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">{isSaved ? 'Saved' : 'Save'}</span>
+                    </button>
 
                     <div className="w-px h-8 bg-slate-700 mx-2 hidden sm:block"></div>
 
