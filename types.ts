@@ -15,6 +15,7 @@ export interface Agency {
   name: string;
   category: string;
   frequencies: Frequency[];
+  origin?: 'RR' | 'AI'; // Track source of data
 }
 
 export interface Talkgroup {
@@ -38,6 +39,7 @@ export interface TrunkedSystem {
   location: string;
   frequencies: TrunkedSystemFreq[];
   talkgroups: Talkgroup[];
+  origin?: 'RR' | 'AI'; // Track source of data
 }
 
 export interface CrossRefData {
@@ -50,6 +52,7 @@ export interface CrossRefData {
 export interface ScanResult {
   source: 'API' | 'AI' | 'Cache';
   locationName: string;
+  coords?: { lat: number, lng: number };
   summary: string;
   crossRef?: CrossRefData;
   agencies: Agency[];
@@ -80,23 +83,23 @@ export interface SearchResponse {
   rawText?: string;
 }
 
-export type ServiceType = 
-  | 'Police' 
-  | 'Fire' 
-  | 'EMS' 
-  | 'Federal' 
-  | 'Public Works' 
-  | 'Ham Radio' 
-  | 'Railroad' 
-  | 'Air' 
-  | 'Marine' 
-  | 'Utilities' 
-  | 'Military' 
-  | 'Transportation' 
-  | 'Business' 
-  | 'Hospitals' 
-  | 'Schools' 
-  | 'Corrections' 
+export type ServiceType =
+  | 'Police'
+  | 'Fire'
+  | 'EMS'
+  | 'Federal'
+  | 'Public Works'
+  | 'Ham Radio'
+  | 'Railroad'
+  | 'Air'
+  | 'Marine'
+  | 'Utilities'
+  | 'Military'
+  | 'Transportation'
+  | 'Business'
+  | 'Hospitals'
+  | 'Schools'
+  | 'Corrections'
   | 'Security'
   | 'Multi-Dispatch';
 
