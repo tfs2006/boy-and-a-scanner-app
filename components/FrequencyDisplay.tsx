@@ -1,8 +1,217 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ScanResult, Agency, TrunkedSystem, FrequencyConfirmationCount } from '../types';
-import { Radio, Shield, Flame, Activity, Hash, Zap, CheckCircle2, AlertTriangle, SearchCheck, Signal, Ear, Loader2 } from 'lucide-react';
+import { Radio, Shield, Flame, Activity, Hash, Zap, CheckCircle2, AlertTriangle, SearchCheck, Signal, Ear, Loader2, SlidersHorizontal, X } from 'lucide-react';
 import { logConfirmation, getBatchConfirmationCounts } from '../services/crowdsourceService';
+
+// ---------------------------------------------------------------------------
+// System-type filter taxonomy
+// ---------------------------------------------------------------------------
+type SystemFilterKey =
+  | 'analog'
+  | 'p25-conv' | 'p25-phase1' | 'p25-phase2'
+  | 'dmr-conv' | 'dmr-trunked'
+  | 'nxdn-conv' | 'nxdn-trunked'
+  | 'edacs' | 'ltr' | 'motorola';
+
+interface SystemFilterConfig {
+  label: string;
+  sublabel?: string;
+  activeClass: string;  // Tailwind classes when selected
+  group: string;        // visual grouping
+}
+
+const SYSTEM_FILTER_CONFIG: Record<SystemFilterKey, SystemFilterConfig> = {
+  'analog':       { label: 'Analog',   sublabel: 'FM / AM',       activeClass: 'bg-slate-600   border-slate-400   text-white',         group: 'analog' },
+  'p25-conv':     { label: 'P25',      sublabel: 'Conventional',  activeClass: 'bg-blue-800/70 border-blue-400    text-blue-100',      group: 'p25' },
+  'p25-phase1':   { label: 'P25',      sublabel: 'Phase I',       activeClass: 'bg-blue-700/70 border-blue-300    text-blue-100',      group: 'p25' },
+  'p25-phase2':   { label: 'P25',      sublabel: 'Phase II',      activeClass: 'bg-cyan-800/70 border-cyan-400    text-cyan-100',      group: 'p25' },
+  'dmr-conv':     { label: 'DMR',      sublabel: 'Conventional',  activeClass: 'bg-purple-800/70 border-purple-400 text-purple-100',   group: 'dmr' },
+  'dmr-trunked':  { label: 'DMR',      sublabel: 'Trunked',       activeClass: 'bg-purple-700/70 border-purple-300 text-purple-100',   group: 'dmr' },
+  'nxdn-conv':    { label: 'NXDN',     sublabel: 'Conventional',  activeClass: 'bg-orange-800/70 border-orange-400 text-orange-100',   group: 'nxdn' },
+  'nxdn-trunked': { label: 'NXDN',     sublabel: 'Trunked',       activeClass: 'bg-orange-700/70 border-orange-300 text-orange-100',   group: 'nxdn' },
+  'edacs':        { label: 'EDACS',                               activeClass: 'bg-pink-800/70   border-pink-400    text-pink-100',     group: 'other' },
+  'ltr':          { label: 'LTR',                                 activeClass: 'bg-rose-800/70   border-rose-400    text-rose-100',     group: 'other' },
+  'motorola':     { label: 'Motorola', sublabel: 'Type I/II',     activeClass: 'bg-emerald-800/70 border-emerald-400 text-emerald-100', group: 'other' },
+};
+
+// Ordered for display (grouped)
+const FILTER_ORDER: SystemFilterKey[] = [
+  'analog',
+  'p25-conv', 'p25-phase1', 'p25-phase2',
+  'dmr-conv', 'dmr-trunked',
+  'nxdn-conv', 'nxdn-trunked',
+  'edacs', 'ltr', 'motorola',
+];
+
+// Keys that apply to individual agency frequencies
+const CONV_FILTER_KEYS: SystemFilterKey[] = ['analog', 'p25-conv', 'dmr-conv', 'nxdn-conv'];
+// Keys that apply to trunked systems
+const SYS_FILTER_KEYS: SystemFilterKey[] = ['p25-phase1', 'p25-phase2', 'dmr-trunked', 'nxdn-trunked', 'edacs', 'ltr', 'motorola'];
+
+function freqMatchesFilter(freq: Agency['frequencies'][number], key: SystemFilterKey): boolean {
+  const mode = (freq.mode || '').toUpperCase();
+  switch (key) {
+    case 'analog':
+      // Analog: FM/AM-family modes with no digital identifiers
+      return /^(FM|FMN|NFM|AM|AN|WFM|USB|LSB|CW|FB|MO)$/.test(mode) && !freq.nac && !freq.colorCode && !freq.ran;
+    case 'p25-conv':
+      return /P25|APCO/.test(mode) || (!!freq.nac && !/LTR|EDACS/i.test(mode));
+    case 'dmr-conv':
+      return /DMR/.test(mode) || !!freq.colorCode;
+    case 'nxdn-conv':
+      return /NXDN|NXD/.test(mode) || !!freq.ran;
+    default:
+      return false;
+  }
+}
+
+function systemMatchesFilter(system: TrunkedSystem, key: SystemFilterKey): boolean {
+  const type = (system.type || '').toLowerCase();
+  switch (key) {
+    case 'p25-phase1':   return /p25/.test(type) && !/phase\s*i{2}|phase\s*2|tdma/.test(type);
+    case 'p25-phase2':   return /phase\s*i{2}|phase\s*2|tdma/.test(type);
+    case 'dmr-trunked':  return /\bdmr\b/.test(type);
+    case 'nxdn-trunked': return /nxdn|nexedge/.test(type);
+    case 'edacs':        return /edacs/.test(type);
+    case 'ltr':          return /\bltr\b/.test(type);
+    case 'motorola':     return /motorola|type\s*i/.test(type);
+    default:             return false;
+  }
+}
+
+/** Scan data and return only the filter keys that are actually present */
+function detectPresentFilters(data: ScanResult): Set<SystemFilterKey> {
+  const present = new Set<SystemFilterKey>();
+  for (const agency of data.agencies || []) {
+    for (const freq of agency.frequencies || []) {
+      for (const key of CONV_FILTER_KEYS) {
+        if (freqMatchesFilter(freq, key)) present.add(key);
+      }
+    }
+  }
+  for (const sys of data.trunkedSystems || []) {
+    for (const key of SYS_FILTER_KEYS) {
+      if (systemMatchesFilter(sys, key)) present.add(key);
+    }
+  }
+  return present;
+}
+
+// ---------------------------------------------------------------------------
+// System Type Filter UI
+// ---------------------------------------------------------------------------
+const SystemTypeFilter: React.FC<{
+  presentFilters: Set<SystemFilterKey>;
+  activeFilters: Set<SystemFilterKey>;
+  onToggle: (key: SystemFilterKey) => void;
+  onClearAll: () => void;
+  agencyCountTotal: number;
+  agencyCountFiltered: number;
+  systemCountTotal: number;
+  systemCountFiltered: number;
+}> = ({ presentFilters, activeFilters, onToggle, onClearAll, agencyCountTotal, agencyCountFiltered, systemCountTotal, systemCountFiltered }) => {
+  const [open, setOpen] = useState(false);
+
+  if (presentFilters.size <= 1) return null; // Not useful to filter if only one type
+
+  const hasActiveFilter = activeFilters.size > 0;
+  const isFiltering = hasActiveFilter && (agencyCountFiltered < agencyCountTotal || systemCountFiltered < systemCountTotal);
+
+  // Build chip groups for display
+  const visibleByGroup: Partial<Record<string, SystemFilterKey[]>> = {};
+  for (const key of FILTER_ORDER) {
+    if (!presentFilters.has(key)) continue;
+    const cfg = SYSTEM_FILTER_CONFIG[key];
+    if (!visibleByGroup[cfg.group]) visibleByGroup[cfg.group] = [];
+    visibleByGroup[cfg.group]!.push(key);
+  }
+
+  return (
+    <div className="bg-slate-900/50 border border-slate-700 rounded-lg overflow-hidden">
+      {/* Header toggle */}
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-mono-tech uppercase tracking-wider hover:bg-slate-800/50 transition-colors"
+      >
+        <span className="flex items-center gap-2 text-slate-400 hover:text-white">
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          System Type Filter
+          {isFiltering && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-900/40 border border-cyan-500/30 text-cyan-400 normal-case font-normal">
+              {agencyCountFiltered}/{agencyCountTotal} agencies · {systemCountFiltered}/{systemCountTotal} systems shown
+            </span>
+          )}
+        </span>
+        <span className="text-slate-500">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="px-4 pb-4 pt-2 border-t border-slate-700/50 animate-fade-in">
+          <div className="flex flex-wrap gap-x-4 gap-y-3">
+            {/* "All" reset chip */}
+            <button
+              type="button"
+              onClick={onClearAll}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold font-mono-tech transition-all ${
+                !hasActiveFilter
+                  ? 'bg-cyan-600 border-cyan-500 text-white shadow-md shadow-cyan-900/30'
+                  : 'bg-slate-800 border-slate-600 text-slate-400 hover:border-slate-500 hover:text-white'
+              }`}
+            >
+              All Systems
+            </button>
+
+            {/* Chips grouped by technology family */}
+            {Object.entries(visibleByGroup).map(([group, keys], gi) => (
+              <React.Fragment key={group}>
+                {gi > 0 && <div className="w-px bg-slate-700 self-stretch mx-0.5" />}
+                <div className="flex flex-wrap gap-2">
+                  {keys!.map(key => {
+                    const cfg = SYSTEM_FILTER_CONFIG[key];
+                    const isActive = activeFilters.has(key);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => onToggle(key)}
+                        className={`flex flex-col items-start px-3 py-1.5 rounded-full border text-xs font-bold font-mono-tech transition-all hover:scale-105 ${
+                          isActive
+                            ? `${cfg.activeClass} shadow-md`
+                            : 'bg-slate-800 border-slate-600 text-slate-400 hover:border-slate-500 hover:text-white'
+                        }`}
+                      >
+                        <span>{cfg.label}</span>
+                        {cfg.sublabel && (
+                          <span className={`text-[9px] font-normal normal-case leading-tight -mt-0.5 ${isActive ? 'opacity-80' : 'text-slate-500'}`}>
+                            {cfg.sublabel}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </React.Fragment>
+            ))}
+
+            {/* Clear active filters */}
+            {hasActiveFilter && (
+              <button
+                type="button"
+                onClick={onClearAll}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-full border border-slate-700 text-slate-500 hover:text-red-400 hover:border-red-500/40 text-xs font-mono-tech transition-colors ml-auto"
+                title="Clear all filters"
+              >
+                <X className="w-3 h-3" /> Clear
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface FrequencyDisplayProps {
   data: ScanResult;
@@ -305,6 +514,50 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
   // Frequencies confirmed this session (prevent double-tapping)
   const [confirmedSet, setConfirmedSet] = useState<Set<string>>(new Set());
 
+  // --- System type filter state ---
+  const [activeFilters, setActiveFilters] = useState<Set<SystemFilterKey>>(new Set());
+
+  // Reset filters whenever the result data changes (new search)
+  useEffect(() => {
+    setActiveFilters(new Set());
+  }, [data]);
+
+  // Detect which filter types are actually present in this result
+  const presentFilters = useMemo(() => detectPresentFilters(data), [data]);
+
+  const handleFilterToggle = useCallback((key: SystemFilterKey) => {
+    setActiveFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+
+  const handleFilterClear = useCallback(() => setActiveFilters(new Set()), []);
+
+  // Compute filtered agencies: keep agencies that have at least one matching frequency
+  const filteredAgencies = useMemo(() => {
+    if (activeFilters.size === 0) return agencies;
+    const activeConvKeys = CONV_FILTER_KEYS.filter(k => activeFilters.has(k));
+    if (activeConvKeys.length === 0) return []; // only system-type filters active
+    return agencies
+      .map(agency => ({
+        ...agency,
+        frequencies: (agency.frequencies || []).filter(f =>
+          activeConvKeys.some(k => freqMatchesFilter(f, k))
+        ),
+      }))
+      .filter(a => a.frequencies.length > 0);
+  }, [agencies, activeFilters]);
+
+  // Compute filtered trunked systems
+  const filteredSystems = useMemo(() => {
+    if (activeFilters.size === 0) return systems;
+    const activeSysKeys = SYS_FILTER_KEYS.filter(k => activeFilters.has(k));
+    if (activeSysKeys.length === 0) return [];
+    return systems.filter(sys => activeSysKeys.some(k => systemMatchesFilter(sys, k)));
+  }, [systems, activeFilters]);
+
   // Load batch counts when result changes
   useEffect(() => {
     if (!locationQuery) return;
@@ -361,11 +614,19 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
         </div>
         <div className="flex gap-4 text-center">
           <div className="bg-slate-900 p-3 rounded border border-slate-800 min-w-[100px]">
-            <div className="text-2xl font-mono-tech text-blue-400">{agencies.length}</div>
+            <div className="text-2xl font-mono-tech text-blue-400">
+              {activeFilters.size > 0 && filteredAgencies.length !== agencies.length
+                ? <><span>{filteredAgencies.length}</span><span className="text-sm text-slate-600">/{agencies.length}</span></>
+                : agencies.length}
+            </div>
             <div className="text-xs text-slate-500 uppercase tracking-wider">Agencies</div>
           </div>
           <div className="bg-slate-900 p-3 rounded border border-slate-800 min-w-[100px]">
-            <div className="text-2xl font-mono-tech text-purple-400">{systems.length}</div>
+            <div className="text-2xl font-mono-tech text-purple-400">
+              {activeFilters.size > 0 && filteredSystems.length !== systems.length
+                ? <><span>{filteredSystems.length}</span><span className="text-sm text-slate-600">/{systems.length}</span></>
+                : systems.length}
+            </div>
             <div className="text-xs text-slate-500 uppercase tracking-wider">Systems</div>
           </div>
         </div>
@@ -381,14 +642,26 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
         </div>
       )}
 
+      {/* System Type Filter — only rendered when multiple types are present */}
+      <SystemTypeFilter
+        presentFilters={presentFilters}
+        activeFilters={activeFilters}
+        onToggle={handleFilterToggle}
+        onClearAll={handleFilterClear}
+        agencyCountTotal={agencies.length}
+        agencyCountFiltered={filteredAgencies.length}
+        systemCountTotal={systems.length}
+        systemCountFiltered={filteredSystems.length}
+      />
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
         <div className="space-y-6">
           <div className="flex items-center gap-2 mb-4 border-b border-slate-700 pb-2">
             <Radio className="w-5 h-5 text-slate-400" />
             <h3 className="text-xl font-semibold text-slate-200">Conventional Frequencies</h3>
           </div>
-          {agencies.length > 0 ? (
-            agencies.map((agency, i) => (
+          {filteredAgencies.length > 0 ? (
+            filteredAgencies.map((agency, i) => (
               <AgencyCard
                 key={i}
                 agency={agency}
@@ -399,6 +672,10 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
                 isLoggedIn={isLoggedIn}
               />
             ))
+          ) : activeFilters.size > 0 ? (
+            <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
+              No conventional agencies match the active filter.
+            </div>
           ) : (
             <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
               No conventional agencies found via search.
@@ -411,8 +688,12 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
             <Hash className="w-5 h-5 text-slate-400" />
             <h3 className="text-xl font-semibold text-slate-200">Trunked Systems</h3>
           </div>
-          {systems.length > 0 ? (
-            systems.map((sys, i) => <TrunkedSystemCard key={i} system={sys} />)
+          {filteredSystems.length > 0 ? (
+            filteredSystems.map((sys, i) => <TrunkedSystemCard key={i} system={sys} />)
+          ) : activeFilters.size > 0 ? (
+            <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
+              No trunked systems match the active filter.
+            </div>
           ) : (
             <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
               No trunked systems found via search.
