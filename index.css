@@ -117,3 +117,77 @@
   border-color: var(--border-color);
   transition: border-color 0.3s;
 }
+
+/* ─── Explore Map: Glowing Cache-Location Markers ─────────────────────── */
+
+.explore-pin {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.explore-pin__dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #06b6d4;
+  box-shadow: 0 0 6px 2px rgba(6, 182, 212, 0.55), 0 0 14px rgba(6, 182, 212, 0.25);
+  transition: background 0.2s, box-shadow 0.2s, width 0.2s, height 0.2s;
+}
+
+.explore-pin--selected .explore-pin__dot {
+  background: #f59e0b;
+  box-shadow: 0 0 8px 3px rgba(245, 158, 11, 0.65), 0 0 22px rgba(245, 158, 11, 0.35);
+  width: 14px;
+  height: 14px;
+}
+
+.explore-pin__ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(6, 182, 212, 0.8);
+  transform: translate(-50%, -50%) scale(1);
+  opacity: 0;
+  animation: explore-pulse 2.8s ease-out infinite;
+}
+
+.explore-pin--selected .explore-pin__ring {
+  border-color: rgba(245, 158, 11, 0.8);
+  animation: explore-pulse 1.6s ease-out infinite;
+}
+
+@keyframes explore-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(3.8);
+    opacity: 0;
+  }
+}
+
+/* Slide-in from right for the panel */
+@keyframes slideInRight {
+  from {
+    transform: translateX(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.28s ease-out forwards;
+}

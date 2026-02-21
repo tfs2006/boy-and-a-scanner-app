@@ -21,12 +21,13 @@ import { ComparisonView } from './components/ComparisonView';
 import { SearchForm } from './components/SearchForm';
 import { Leaderboard } from './components/Leaderboard';
 import { ContributeModal } from './components/ContributeModal';
+import { ExploreMap } from './components/ExploreMap';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const [mode, setMode] = useState<'scan' | 'trip' | 'leaderboard'>('scan');
+  const [mode, setMode] = useState<'scan' | 'trip' | 'leaderboard' | 'explore'>('scan');
 
   // Crowdsource / Contribute Modal
   const [showContribute, setShowContribute] = useState(false);
@@ -519,6 +520,12 @@ function App() {
                   <Map className="w-3 h-3" /> <span className="hidden lg:inline">TRIP PLAN</span>
                 </button>
                 <button
+                  onClick={() => setMode('explore')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-2 ${mode === 'explore' ? 'bg-cyan-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                  <Globe className="w-3 h-3" /> <span className="hidden lg:inline">EXPLORE</span>
+                </button>
+                <button
                   onClick={() => setMode('leaderboard')}
                   className={`px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-2 ${mode === 'leaderboard' ? 'bg-yellow-600 text-white' : 'text-slate-400 hover:text-white'}`}
                 >
@@ -541,6 +548,13 @@ function App() {
                   title="Trip Planner"
                 >
                   <Map className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setMode('explore')}
+                  className={`p-2 rounded border border-slate-700 transition-colors ${mode === 'explore' ? 'bg-cyan-900/30 text-cyan-400' : 'text-slate-500'}`}
+                  title="Cache Explorer"
+                >
+                  <Globe className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setMode('leaderboard')}
@@ -663,6 +677,8 @@ function App() {
           <Leaderboard currentUserId={session?.user?.id} />
         ) : mode === 'trip' ? (
           <TripPlanner />
+        ) : mode === 'explore' ? (
+          <ExploreMap isLoggedIn={!!session} />
         ) : (
           <>
             {/* Search Hero */}
