@@ -28,8 +28,11 @@ const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
 const DELAY_MS = (parseInt(process.env.DELAY_SECONDS) || 5) * 1000;
 const MAX_AGE_MS = (parseInt(process.env.MAX_AGE_HOURS) || 24) * 60 * 60 * 1000;
 const MODEL_NAME = 'gemini-2.0-flash';
-const SERVICE_TYPES = ['Police', 'Fire', 'EMS'];
-const SERVICES_KEY = 'ems-fire-police'; // sorted, lowered — matches app's key format
+const SERVICE_TYPES = [
+    'Police', 'Fire', 'EMS', 'Ham Radio', 'Railroad', 'Air', 'Marine',
+    'Federal', 'Military', 'Public Works', 'Utilities', 'Transportation',
+    'Business', 'Hospitals', 'Schools', 'Corrections', 'Security', 'Multi-Dispatch'
+];
 
 const IS_TEST = process.argv.includes('--test');
 
@@ -46,7 +49,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 // ─── Cache Helpers ────────────────────────────────────────────────────────────
 
 function makeCacheKey(zip) {
-    return `loc_${zip}_[${SERVICES_KEY}]`;
+    return `v6_loc_${zip}`;
 }
 
 async function isFresh(cacheKey) {
@@ -106,6 +109,7 @@ function buildPrompt(zip) {
     {
       "source": "AI",
       "locationName": "County, State",
+      "coords": { "lat": 0.0, "lng": 0.0 },
       "summary": "Overview...",
       "crossRef": { "verified": true, "confidenceScore": 95, "sourcesChecked": 3, "notes": "Verified." },
       "agencies": [
