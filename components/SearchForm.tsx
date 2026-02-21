@@ -7,6 +7,8 @@ interface SearchFormProps {
     initialQuery?: string;
     onGeoLocation?: () => void;
     onCancel?: () => void;
+    onInputFocus?: () => void;
+    onInputBlur?: () => void;
 }
 
 const US_STATES = [
@@ -17,7 +19,7 @@ const US_STATES = [
     'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
 ];
 
-export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation, onCancel }: SearchFormProps) {
+export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation, onCancel, onInputFocus, onInputBlur }: SearchFormProps) {
     const [mode, setMode] = useState<'simple' | 'advanced'>('simple');
     const [simpleQuery, setSimpleQuery] = useState(initialQuery);
 
@@ -103,6 +105,8 @@ export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation
                                 placeholder="Enter ZIP, City, or use GPS"
                                 className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 h-12 pl-3 font-mono-tech text-lg outline-none"
                                 disabled={loading}
+                                onFocus={onInputFocus}
+                                onBlur={onInputBlur}
                             />
                             <div className="flex items-center gap-1 pr-1">
                                 {onGeoLocation && (

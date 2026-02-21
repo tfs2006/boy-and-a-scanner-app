@@ -801,12 +801,14 @@ function App() {
                 initialQuery={searchQuery}
                 onGeoLocation={handleGeoLocation}
                 onCancel={handleCancel}
+                onInputFocus={() => setShowSuggestions(true)}
+                onInputBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
               />
 
               {/* Recent Search History Suggestions */}
               <div className="relative max-w-lg mx-auto">
                 <SearchSuggestions
-                  visible={!result && !loading}
+                  visible={showSuggestions && !result && !loading}
                   onSelect={(query) => handleFavoriteClick(query)}
                 />
               </div>
