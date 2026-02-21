@@ -191,3 +191,49 @@
 .animate-slide-in-right {
   animation: slideInRight 0.28s ease-out forwards;
 }
+
+/* ─── Mobile Bottom Tab Bar Active Indicator ──────────────────────────── */
+.tab-active-indicator {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 32px;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+}
+
+/* ─── Mobile Responsive Improvements ─────────────────────────────────── */
+
+/* Prevent horizontal overflow on mobile */
+@media (max-width: 640px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  /* Better tap targets on mobile */
+  button, a {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Smoother scrolling on mobile */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .overflow-x-auto::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Prevent text from overflowing result cards */
+  .font-mono-tech {
+    word-break: break-word;
+  }
+}
+
+/* ─── Safe area insets for notched/bar phones ─────────────────────────── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .mobile-tab-bar {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

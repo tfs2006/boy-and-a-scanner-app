@@ -439,39 +439,43 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen theme-bg-main theme-text-main pb-20 selection:bg-amber-500/30 transition-colors duration-300">
+    <div className="min-h-screen theme-bg-main theme-text-main pb-24 md:pb-20 selection:bg-amber-500/30 transition-colors duration-300">
       {/* Navbar */}
-      <nav className="sticky top-0 z-50 bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-800 select-none">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-2">
-              <div className="p-2 bg-gradient-to-tr from-cyan-600 to-blue-700 rounded-lg shadow-lg shadow-blue-900/20">
-                <Radio className="w-6 h-6 text-white" />
+      <nav className="sticky top-0 z-50 bg-[#0f172a]/95 backdrop-blur-md border-b border-slate-800 select-none">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16">
+
+            {/* Left: Logo */}
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="p-1.5 sm:p-2 bg-gradient-to-tr from-cyan-600 to-blue-700 rounded-lg shadow-lg shadow-blue-900/20 shrink-0">
+                <Radio className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
-              <div className="hidden lg:block">
-                <h1 className="text-xl font-bold text-white tracking-tight font-mono-tech">BOY & A SCANNER</h1>
-                <p className="text-[10px] text-cyan-400 font-mono-tech tracking-wider uppercase">Database Access Terminal</p>
+              <div>
+                <h1 className="text-sm sm:text-base lg:text-xl font-bold text-white tracking-tight font-mono-tech leading-tight">BOY & A SCANNER</h1>
+                <p className="hidden sm:block text-[9px] sm:text-[10px] text-cyan-400 font-mono-tech tracking-wider uppercase">Database Access Terminal</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            {/* Right: Actions */}
+            <div className="flex items-center gap-1 sm:gap-2 lg:gap-3">
+
               {/* Theme Toggle */}
               <button
                 onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
                 className="p-2 rounded-full hover:bg-slate-800 text-slate-400 hover:text-cyan-400 transition-colors"
                 title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
               >
-                {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+                {theme === 'dark' ? <Sun className="w-4 h-4 sm:w-5 sm:h-5" /> : <Moon className="w-4 h-4 sm:w-5 sm:h-5" />}
               </button>
 
-              {/* External Links Toolbar */}
-              <div className="flex items-center gap-1 mr-1 sm:mr-3 border-r border-slate-700 pr-2 sm:pr-4">
+              {/* External Links - hidden on mobile, visible sm+ */}
+              <div className="hidden sm:flex items-center gap-0.5 border-r border-slate-700 pr-2 sm:pr-3 mr-0.5 sm:mr-1">
                 <a
                   href="https://boyandascanner.com"
                   target="_blank"
                   rel="noopener noreferrer"
                   title="Main Website"
-                  className="p-2 text-slate-400 hover:text-cyan-400 transition-colors rounded-lg hover:bg-slate-800"
+                  className="p-1.5 sm:p-2 text-slate-400 hover:text-cyan-400 transition-colors rounded-lg hover:bg-slate-800"
                 >
                   <Globe className="w-4 h-4" />
                 </a>
@@ -480,93 +484,61 @@ function App() {
                   target="_blank"
                   rel="noopener noreferrer"
                   title="Merch Store"
-                  className="p-2 text-slate-400 hover:text-pink-400 transition-colors rounded-lg hover:bg-slate-800"
+                  className="p-1.5 sm:p-2 text-slate-400 hover:text-pink-400 transition-colors rounded-lg hover:bg-slate-800"
                 >
                   <ShoppingBag className="w-4 h-4" />
                 </a>
                 <a
                   href="mailto:contact@boyandascanner.com?subject=Feature%20Request:%20Scan%20App"
                   title="Request a Feature"
-                  className="p-2 text-slate-400 hover:text-emerald-400 transition-colors rounded-lg hover:bg-slate-800"
+                  className="p-1.5 sm:p-2 text-slate-400 hover:text-emerald-400 transition-colors rounded-lg hover:bg-slate-800"
                 >
                   <MessageSquarePlus className="w-4 h-4" />
                 </a>
               </div>
 
-              {/* Buy Me A Coffee - Highlighted */}
+              {/* Buy Me A Coffee */}
               <a
                 href="https://buymeacoffee.com/boyandascanner"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-2 px-3 py-1.5 rounded bg-[#FFDD00] hover:bg-[#ffea00] text-black font-bold font-mono-tech text-xs transition-transform hover:scale-105 shadow-lg shadow-amber-900/20 mr-2"
+                className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded bg-[#FFDD00] hover:bg-[#ffea00] text-black font-bold font-mono-tech text-xs transition-transform hover:scale-105 shadow-lg shadow-amber-900/20"
                 title="Buy me a coffee"
               >
-                <Coffee className="w-4 h-4" />
+                <Coffee className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                 <span className="hidden sm:inline">Support</span>
               </a>
 
-              {/* Mode Switcher */}
+              {/* Mode Switcher - tablet & desktop only */}
               <div className="hidden md:flex bg-slate-800 rounded-lg p-1 border border-slate-700">
                 <button
                   onClick={() => setMode('scan')}
-                  className={`px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-2 ${mode === 'scan' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-2.5 lg:px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-1.5 ${mode === 'scan' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white'}`}
                 >
                   <LocateFixed className="w-3 h-3" /> <span className="hidden lg:inline">LOCAL</span>
                 </button>
                 <button
                   onClick={() => setMode('trip')}
-                  className={`px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-2 ${mode === 'trip' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-2.5 lg:px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-1.5 ${mode === 'trip' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
                 >
-                  <Map className="w-3 h-3" /> <span className="hidden lg:inline">TRIP PLAN</span>
+                  <Map className="w-3 h-3" /> <span className="hidden lg:inline">TRIP</span>
                 </button>
                 <button
                   onClick={() => setMode('explore')}
-                  className={`px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-2 ${mode === 'explore' ? 'bg-cyan-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-2.5 lg:px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-1.5 ${mode === 'explore' ? 'bg-cyan-700 text-white' : 'text-slate-400 hover:text-white'}`}
                 >
                   <Globe className="w-3 h-3" /> <span className="hidden lg:inline">EXPLORE</span>
                 </button>
                 <button
                   onClick={() => setMode('leaderboard')}
-                  className={`px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-2 ${mode === 'leaderboard' ? 'bg-yellow-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-2.5 lg:px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-1.5 ${mode === 'leaderboard' ? 'bg-yellow-600 text-white' : 'text-slate-400 hover:text-white'}`}
                 >
-                  <Trophy className="w-3 h-3" /> <span className="hidden lg:inline">LEADERBOARD</span>
+                  <Trophy className="w-3 h-3" /> <span className="hidden lg:inline">RANKS</span>
                 </button>
               </div>
 
-              {/* Mobile Mode Switcher (Icon Only) */}
-              <div className="flex md:hidden gap-1">
-                <button
-                  onClick={() => setMode('scan')}
-                  className={`p-2 rounded border border-slate-700 transition-colors ${mode === 'scan' ? 'bg-cyan-900/30 text-cyan-400' : 'text-slate-500'}`}
-                  title="Local Scan"
-                >
-                  <LocateFixed className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setMode('trip')}
-                  className={`p-2 rounded border border-slate-700 transition-colors ${mode === 'trip' ? 'bg-amber-900/30 text-amber-400' : 'text-slate-500'}`}
-                  title="Trip Planner"
-                >
-                  <Map className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setMode('explore')}
-                  className={`p-2 rounded border border-slate-700 transition-colors ${mode === 'explore' ? 'bg-cyan-900/30 text-cyan-400' : 'text-slate-500'}`}
-                  title="Cache Explorer"
-                >
-                  <Globe className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setMode('leaderboard')}
-                  className={`p-2 rounded border border-slate-700 transition-colors ${mode === 'leaderboard' ? 'bg-yellow-900/30 text-yellow-400' : 'text-slate-500'}`}
-                  title="Leaderboard"
-                >
-                  <Trophy className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* User / Sign Out */}
-              <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-3 py-1.5 gap-3">
+              {/* Settings + Sign Out */}
+              <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-2 sm:px-3 py-1.5 gap-2 sm:gap-3">
                 <button
                   onClick={() => setShowRRSettings(!showRRSettings)}
                   title="RadioReference Settings"
@@ -586,6 +558,44 @@ function App() {
           </div>
         </div>
       </nav>
+
+      {/* Mobile Bottom Tab Bar - visible only on mobile (hidden md+) */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-[#0a1120]/95 backdrop-blur-md border-t border-slate-800 mobile-tab-bar">
+        <div className="flex items-stretch h-16 max-w-lg mx-auto">
+          <button
+            onClick={() => setMode('scan')}
+            className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${mode === 'scan' ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            {mode === 'scan' && <span className="tab-active-indicator bg-cyan-400" />}
+            <LocateFixed className="w-5 h-5" />
+            <span className="text-[10px] font-mono-tech font-bold uppercase tracking-wider">LOCAL</span>
+          </button>
+          <button
+            onClick={() => setMode('trip')}
+            className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${mode === 'trip' ? 'text-amber-400' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            {mode === 'trip' && <span className="tab-active-indicator bg-amber-400" />}
+            <Map className="w-5 h-5" />
+            <span className="text-[10px] font-mono-tech font-bold uppercase tracking-wider">TRIP</span>
+          </button>
+          <button
+            onClick={() => setMode('explore')}
+            className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${mode === 'explore' ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            {mode === 'explore' && <span className="tab-active-indicator bg-cyan-400" />}
+            <Globe className="w-5 h-5" />
+            <span className="text-[10px] font-mono-tech font-bold uppercase tracking-wider">EXPLORE</span>
+          </button>
+          <button
+            onClick={() => setMode('leaderboard')}
+            className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${mode === 'leaderboard' ? 'text-yellow-400' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            {mode === 'leaderboard' && <span className="tab-active-indicator bg-yellow-400" />}
+            <Trophy className="w-5 h-5" />
+            <span className="text-[10px] font-mono-tech font-bold uppercase tracking-wider">RANKS</span>
+          </button>
+        </div>
+      </div>
 
       {/* RadioReference Settings Panel */}
       {showRRSettings && (
@@ -671,7 +681,7 @@ function App() {
       )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 selection:bg-amber-500/30">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 selection:bg-amber-500/30">
 
         {mode === 'leaderboard' ? (
           <Leaderboard currentUserId={session?.user?.id} />
@@ -683,11 +693,11 @@ function App() {
           <>
             {/* Search Hero */}
             {!result && !loading && (
-              <div className="mt-16 text-center max-w-2xl mx-auto animate-fade-in-up">
+              <div className="mt-8 sm:mt-16 text-center max-w-2xl mx-auto animate-fade-in-up">
                 <div className="inline-flex items-center justify-center p-4 rounded-full bg-slate-800/50 mb-6 border border-slate-700 shadow-xl shadow-cyan-900/10">
                   <SignalHigh className="w-10 h-10 text-cyan-400" />
                 </div>
-                <h2 className="text-4xl sm:text-5xl font-bold text-white mb-6 tracking-tight">
+                <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4 sm:mb-6 tracking-tight">
                   Frequency Intelligence. <br />
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Decoded.</span>
                 </h2>
@@ -705,7 +715,7 @@ function App() {
                   </div>
                 )}
 
-                <p className="text-lg text-slate-400 mb-10 leading-relaxed">
+                <p className="text-base sm:text-lg text-slate-400 mb-6 sm:mb-10 leading-relaxed px-2">
                   Access the <strong>RadioReference Database</strong> to find Police, Fire, and EMS frequencies for any area.
                   Now featuring <strong>Cross-Reference Verification</strong> for maximum accuracy.
                 </p>
@@ -911,7 +921,7 @@ function App() {
                     <MapDisplay coords={result.coords} locationName={result.locationName} />
                   )}
 
-                  <div className="flex flex-wrap justify-center gap-4 mb-6">
+                  <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mb-6">
                     {/* Pin / Compare Button */}
                     {pinnedResult && pinnedResult.locationName !== result.locationName ? (
                       <button
@@ -924,7 +934,7 @@ function App() {
                     ) : (
                       <button
                         onClick={() => setPinnedResult(pinnedResult?.locationName === result.locationName ? null : result)}
-                        className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full border transition-all shadow-lg hover:scale-105 ${pinnedResult?.locationName === result.locationName
+                        className={`inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border transition-all shadow-lg hover:scale-105 ${pinnedResult?.locationName === result.locationName
                           ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-900/20'
                           : 'bg-slate-800/40 border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white'
                           }`}
@@ -940,7 +950,7 @@ function App() {
                     {/* Save / Favorite Button */}
                     <button
                       onClick={toggleFavorite}
-                      className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-full border transition-all shadow-lg hover:scale-105 ${isSaved
+                      className={`inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border transition-all shadow-lg hover:scale-105 ${isSaved
                         ? 'bg-amber-500/20 border-amber-500 text-amber-400 shadow-amber-900/20'
                         : 'bg-slate-800/40 border-slate-600 text-slate-400 hover:bg-slate-700 hover:text-white'
                         }`}
@@ -957,7 +967,7 @@ function App() {
                     <div className="flex flex-wrap items-center justify-center gap-2">
                       <button
                         onClick={() => handleSentinelCopy(result)}
-                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-amber-900/40 border-amber-500/60 text-amber-400 hover:bg-amber-900/60 hover:text-white transition-all shadow-lg shadow-amber-900/20 hover:scale-105"
+                        className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-amber-900/40 border-amber-500/60 text-amber-400 hover:bg-amber-900/60 hover:text-white transition-all shadow-lg shadow-amber-900/20 hover:scale-105"
                         title="Copy Conventional Frequencies for Uniden Sentinel (Paste)"
                       >
                         <Copy className="w-5 h-5" />
@@ -965,7 +975,7 @@ function App() {
                       </button>
                       <button
                         onClick={() => generateCSV(result)}
-                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-emerald-900/40 border-emerald-500/60 text-emerald-400 hover:bg-emerald-900/60 hover:text-white transition-all shadow-lg shadow-emerald-900/20 hover:scale-105"
+                        className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-emerald-900/40 border-emerald-500/60 text-emerald-400 hover:bg-emerald-900/60 hover:text-white transition-all shadow-lg shadow-emerald-900/20 hover:scale-105"
                       >
                         <FileDown className="w-5 h-5" />
                         <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">CSV</span>
@@ -981,7 +991,7 @@ function App() {
                     */}
                       <button
                         onClick={() => setShowManual(true)}
-                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full border bg-blue-900/40 border-blue-500/60 text-blue-400 hover:bg-blue-900/60 hover:text-white transition-all shadow-lg shadow-blue-900/20 hover:scale-105"
+                        className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-blue-900/40 border-blue-500/60 text-blue-400 hover:bg-blue-900/60 hover:text-white transition-all shadow-lg shadow-blue-900/20 hover:scale-105"
                       >
                         <BookOpen className="w-5 h-5" />
                         <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Manual</span>
@@ -1065,11 +1075,11 @@ function App() {
         }
       </main>
 
-      <footer className="fixed bottom-0 w-full bg-[#0f172a] border-t border-slate-800 py-2 text-center z-40">
-        <div className="flex justify-center items-center gap-4 text-[10px] text-slate-600 font-mono-tech uppercase">
-          <span>Data provided by RadioReference.com</span>
-          <span>//</span>
-          <span>Do Not Transmit</span>
+      <footer className="fixed bottom-0 w-full bg-[#0f172a] border-t border-slate-800 py-2 text-center z-40 hidden md:block">
+        <div className="flex justify-center items-center gap-2 sm:gap-4 text-[10px] text-slate-600 font-mono-tech uppercase flex-wrap px-4">
+          <span>Data by RadioReference.com</span>
+          <span className="hidden sm:inline">//</span>
+          <span className="hidden sm:inline">Do Not Transmit</span>
           <span>//</span>
           <span className={
             cacheStatus === 'connected' ? 'text-emerald-400' :
