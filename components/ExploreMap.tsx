@@ -152,10 +152,7 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
 
   // ──────────────────────────────────────────────────────────────────────────
   return (
-    <div
-      className="flex flex-col rounded-xl overflow-hidden border border-slate-700 shadow-2xl animate-fade-in"
-      style={{ height: 'calc(100vh - 140px)', minHeight: 500 }}
-    >
+    <div className="flex flex-col rounded-xl overflow-hidden border border-slate-700 shadow-2xl animate-fade-in">
       {/* ── Header ── */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-slate-900 border-b border-slate-700 shrink-0">
         <div className="flex items-center gap-3">
@@ -224,7 +221,7 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
 
       {/* ── Body ── */}
       {loading ? (
-        <div className="flex-1 flex flex-col items-center justify-center bg-slate-950">
+        <div className="flex flex-col items-center justify-center bg-slate-950" style={{ height: 420 }}>
           <div className="relative mb-6">
             <div className="w-16 h-16 border-4 border-slate-700 border-t-cyan-500 rounded-full animate-spin" />
             <div className="absolute inset-0 flex items-center justify-center">
@@ -236,7 +233,7 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
           </p>
         </div>
       ) : error ? (
-        <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 gap-3">
+        <div className="flex flex-col items-center justify-center bg-slate-950 gap-3" style={{ height: 420 }}>
           <AlertCircle className="w-8 h-8 text-red-400" />
           <p className="text-red-400 font-mono-tech text-sm">{error}</p>
           <button
@@ -247,7 +244,7 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
           </button>
         </div>
       ) : locations.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 gap-3">
+        <div className="flex flex-col items-center justify-center bg-slate-950 gap-3" style={{ height: 420 }}>
           <Globe className="w-10 h-10 text-slate-600" />
           <p className="text-slate-500 font-mono-tech text-sm">
             No cached locations with coordinates yet.
@@ -257,13 +254,10 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
           </p>
         </div>
       ) : (
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex flex-col">
 
-          {/* ── Map Column ── */}
-          <div
-            className="relative shrink-0 transition-all duration-300"
-            style={{ width: selected ? '55%' : '100%' }}
-          >
+          {/* ── Map (always full width) ── */}
+          <div className="relative w-full" style={{ height: selected ? 380 : 520 }}>
             <MapContainer
               center={[39.5, -98.35]}
               zoom={4}
@@ -284,7 +278,7 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
                   position={[loc.coords.lat, loc.coords.lng]}
                   icon={createMarkerIcon(selected?.key === loc.key)}
                   eventHandlers={{
-                    click: () => setSelected(loc),
+                    click: () => setSelected(selected?.key === loc.key ? null : loc),
                   }}
                 />
               ))}
@@ -321,16 +315,14 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
             )}
           </div>
 
-          {/* ── Side Panel ── */}
+          {/* ── Info Panel (below map, full width) ── */}
           {selected && (
-            <div
-              className="flex flex-col bg-[#0f172a] border-l border-slate-700 overflow-hidden shrink-0 animate-slide-in-right"
-              style={{ width: '45%' }}
-            >
+            <div className="border-t border-slate-700 bg-[#0b1221] animate-fade-in-up">
+
               {/* Panel header */}
-              <div className="flex items-start justify-between px-4 py-3 border-b border-slate-700 bg-slate-900/80 shrink-0">
-                <div className="flex items-start gap-2 min-w-0 pr-2">
-                  <MapPin className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-slate-700 bg-slate-900/80">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-white font-mono-tech leading-tight">
                       {selected.locationName}
@@ -352,7 +344,7 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
               </div>
 
               {/* Meta chips */}
-              <div className="flex flex-wrap gap-2 px-4 py-2.5 border-b border-slate-700/50 bg-slate-900/40 shrink-0">
+              <div className="flex flex-wrap gap-2 px-4 sm:px-6 py-2.5 border-b border-slate-700/50 bg-slate-900/40">
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-900/20 border border-purple-500/30 text-purple-400 text-[10px] font-mono-tech font-bold">
                   <Zap className="w-3 h-3 fill-purple-400" />
                   Cloud Cache
@@ -376,15 +368,15 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
 
               {/* Summary */}
               {selected.data.summary && (
-                <div className="px-4 py-3 border-b border-slate-700/50 shrink-0">
-                  <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">
+                <div className="px-4 sm:px-6 py-3 border-b border-slate-700/50">
+                  <p className="text-xs text-slate-400 leading-relaxed">
                     {selected.data.summary}
                   </p>
                 </div>
               )}
 
-              {/* FrequencyDisplay — scrollable */}
-              <div className="flex-1 overflow-y-auto px-3 py-4">
+              {/* FrequencyDisplay */}
+              <div className="px-3 sm:px-6 py-4">
                 <FrequencyDisplay
                   data={selected.data}
                   locationQuery={selected.locationName}
