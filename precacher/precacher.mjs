@@ -46,6 +46,38 @@ if (!GEMINI_API_KEY || !SUPABASE_URL || !SUPABASE_KEY) {
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ─── Dynamic ZIP Discovery ──────────────────────────────────────────────────
+
+/**
+ * Pulls every ZIP code that users have ever searched from the search_cache table.
+ * Keys are stored as "v6_loc_XXXXX" — we extract the 5-digit ZIP from each.
+ */
+async function getSearchedZips() {
+    try {
+        // Fetch all keys that look like a ZIP-based search (v6_loc_#####)
+        const { data, error } = await supabase
+            .from('search_cache')
+            .select('search_key')
+            .like('search_key', 'v6_loc_%');
+
+        if (error || !data) return [];
+
+        const zips = [];
+        for (const row of data) {
+            // Extract the part after 'v6_loc_'
+            const suffix = row.search_key.replace(/^v6_loc_/, '');
+            // Only keep pure 5-digit ZIP codes (ignore city,state searches)
+            if (/^\d{5}$/.test(suffix)) {
+                zips.push(suffix);
+            }
+        }
+        return zips;
+    } catch (e) {
+        console.warn('⚠️  Could not fetch searched ZIPs from Supabase:', e.message);
+        return [];
+    }
+}
+
 // ─── Cache Helpers ────────────────────────────────────────────────────────────
 
 function makeCacheKey(zip) {
@@ -200,8 +232,21 @@ async function fetchFromGemini(zip) {
 // ─── Main Loop ────────────────────────────────────────────────────────────────
 
 async function run() {
-    const zips = IS_TEST ? ZIPCODES.slice(0, 3) : ZIPCODES;
     const startTime = Date.now();
+
+    // Build ZIP list: static seed + ZIPs users have actually searched
+    let zips;
+    if (IS_TEST) {
+        zips = ZIPCODES.slice(0, 3);
+    } else {
+        console.log('  Discovering searched ZIPs from Supabase...');
+        const searchedZips = await getSearchedZips();
+        const combined = [...new Set([...ZIPCODES, ...searchedZips])];
+        const newlyDiscovered = searchedZips.filter(z => !ZIPCODES.includes(z));
+        console.log(`  Static seed: ${ZIPCODES.length} ZIPs`);
+        console.log(`  User-searched: ${searchedZips.length} ZIPs (${newlyDiscovered.length} new beyond seed)`);
+        zips = combined;
+    }
 
     console.log('═══════════════════════════════════════════════════════════');
     console.log('  BOY & A SCANNER — PRE-CACHER SERVICE');
