@@ -1,14 +1,38 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TripResult, ServiceType, ScanResult } from '../types';
-import { planTrip } from '../services/geminiService';
+import { planTrip, filterTripByServices } from '../services/geminiService';
 import { generateTripPDF } from '../utils/pdfGenerator';
 import { generateCSV } from '../utils/csvGenerator';
 import { exportTripSentinelZip } from '../utils/sentinelExporter';
 import { isValidLocationInput } from '../utils/security';
-import { Map, MapPin, Navigation, FileDown, Loader2, CheckSquare, Square, AlertTriangle, Zap, Bot, Timer, BookOpen, FileText } from 'lucide-react';
+import { Map, MapPin, Navigation, FileDown, Loader2, CheckSquare, Square, AlertTriangle, Zap, Bot, Timer, BookOpen, FileText, ArrowLeftRight, History, X, CheckCheck } from 'lucide-react';
 import { FrequencyDisplay } from './FrequencyDisplay';
 import { ProgrammingManual } from './ProgrammingManual';
+
+const TRIP_HISTORY_KEY = 'trip_history';
+const LOAD_STEPS = [
+    'Mapping driving route...',
+    'Identifying scan zones...',
+    'Scanning conventional frequencies...',
+    'Cross-referencing trunked systems...',
+    'Compiling trip manifest...',
+];
+
+function loadTripHistory(): Array<{ start: string; end: string }> {
+    try {
+        const saved = localStorage.getItem(TRIP_HISTORY_KEY);
+        return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+}
+
+function saveTripToHistory(start: string, end: string) {
+    const history = loadTripHistory();
+    const key = `${start}|${end}`.toLowerCase();
+    const filtered = history.filter(h => `${h.start}|${h.end}`.toLowerCase() !== key);
+    filtered.unshift({ start, end });
+    localStorage.setItem(TRIP_HISTORY_KEY, JSON.stringify(filtered.slice(0, 5)));
+}
 
 export const TripPlanner: React.FC = () => {
     const [start, setStart] = useState('');
@@ -16,12 +40,45 @@ export const TripPlanner: React.FC = () => {
     const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(['Police', 'Fire', 'EMS']);
     const [loading, setLoading] = useState(false);
     const [trip, setTrip] = useState<TripResult | null>(null);
+    const [masterTrip, setMasterTrip] = useState<TripResult | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [inputWarning, setInputWarning] = useState<string | null>(null);
     const [searchTime, setSearchTime] = useState<number>(0);
+    const [searchStep, setSearchStep] = useState<string>('');
+    const [tripHistory, setTripHistory] = useState<Array<{ start: string; end: string }>>([]);
+    const [showHistory, setShowHistory] = useState(false);
+    const stepIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // State for the manual modal in Trip View
     const [selectedManualData, setSelectedManualData] = useState<ScanResult | null>(null);
+
+    // Load trip history on mount
+    useEffect(() => {
+        setTripHistory(loadTripHistory());
+    }, []);
+
+    // Simulate loading step messages while waiting for API
+    useEffect(() => {
+        if (!loading) {
+            setSearchStep('');
+            if (stepIntervalRef.current) clearInterval(stepIntervalRef.current);
+            return;
+        }
+        let i = 0;
+        setSearchStep(LOAD_STEPS[0]);
+        stepIntervalRef.current = setInterval(() => {
+            i++;
+            if (i < LOAD_STEPS.length) setSearchStep(LOAD_STEPS[i]);
+        }, 4000);
+        return () => { if (stepIntervalRef.current) clearInterval(stepIntervalRef.current); };
+    }, [loading]);
+
+    // Re-filter displayed trip when service types change (uses cached master, no API call)
+    useEffect(() => {
+        if (!masterTrip) return;
+        const refiltered = filterTripByServices(masterTrip, serviceTypes);
+        setTrip(refiltered);
+    }, [serviceTypes, masterTrip]);
 
     const availableTypes: ServiceType[] = [
         'Police',
@@ -90,7 +147,13 @@ export const TripPlanner: React.FC = () => {
         try {
             const result = await planTrip(start, end, serviceTypes);
             if (result.trip) {
-                setTrip(result.trip);
+                // Store master (unfiltered) trip so re-filtering is instant
+                const master = result.trip as TripResult;
+                setMasterTrip(master);
+                setTrip(filterTripByServices(master, serviceTypes));
+                saveTripToHistory(start, end);
+                setTripHistory(loadTripHistory());
+                setShowHistory(false);
             } else {
                 setError("Could not generate a route plan. Please try different locations.");
             }
@@ -102,6 +165,14 @@ export const TripPlanner: React.FC = () => {
             setLoading(false);
         }
     };
+
+    const handleSwap = () => {
+        setStart(end);
+        setEnd(start);
+    };
+
+    const selectAllServices = () => setServiceTypes([...availableTypes]);
+    const clearAllServices = () => setServiceTypes([]);
 
     // Helper for Badge
     const getSourceBadge = (isCached: boolean) => {
@@ -150,8 +221,44 @@ export const TripPlanner: React.FC = () => {
                 </h2>
 
                 <form onSubmit={handlePlan} className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Recent Trip History */}
+                    {tripHistory.length > 0 && (
                         <div className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setShowHistory(h => !h)}
+                                className="flex items-center gap-2 text-xs text-slate-400 hover:text-amber-400 transition-colors font-mono-tech uppercase tracking-wider"
+                            >
+                                <History className="w-3 h-3" />
+                                Recent Trips
+                            </button>
+                            {showHistory && (
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-[#1e293b] border border-slate-700 rounded-lg shadow-xl z-20 overflow-hidden">
+                                    {tripHistory.map((h, i) => (
+                                        <button
+                                            key={i}
+                                            type="button"
+                                            onClick={() => { setStart(h.start); setEnd(h.end); setShowHistory(false); }}
+                                            className="w-full text-left px-4 py-2.5 text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors flex items-center gap-3 border-b border-slate-800 last:border-0"
+                                        >
+                                            <Navigation className="w-3 h-3 text-amber-400 shrink-0" />
+                                            <span className="font-mono-tech">{h.start} → {h.end}</span>
+                                        </button>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        onClick={() => { localStorage.removeItem(TRIP_HISTORY_KEY); setTripHistory([]); setShowHistory(false); }}
+                                        className="w-full text-center px-4 py-2 text-xs text-slate-500 hover:text-red-400 transition-colors font-mono-tech uppercase"
+                                    >
+                                        Clear History
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="flex flex-col md:flex-row gap-4 items-end">
+                        <div className="flex-1">
                             <label className="block text-xs text-slate-400 font-mono-tech mb-1 uppercase">Origin</label>
                             <div className={`flex items-center bg-[#1e293b] rounded border p-1 focus-within:border-amber-500 transition-colors ${inputWarning ? 'border-amber-500/50' : 'border-slate-600'}`}>
                                 <MapPin className="ml-2 w-4 h-4 text-slate-500" />
@@ -160,11 +267,19 @@ export const TripPlanner: React.FC = () => {
                                     value={start}
                                     onChange={e => handleInputChange(setStart, e.target.value)}
                                     className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 h-9 font-mono-tech"
-                                    placeholder="City, State"
+                                    placeholder="City, State or ZIP"
                                 />
                             </div>
                         </div>
-                        <div className="relative">
+                        <button
+                            type="button"
+                            onClick={handleSwap}
+                            title="Swap origin and destination"
+                            className="mb-0.5 p-2 rounded border border-slate-600 bg-slate-800 hover:bg-slate-700 hover:border-amber-500 text-slate-400 hover:text-amber-400 transition-all shrink-0"
+                        >
+                            <ArrowLeftRight className="w-4 h-4" />
+                        </button>
+                        <div className="flex-1">
                             <label className="block text-xs text-slate-400 font-mono-tech mb-1 uppercase">Destination</label>
                             <div className={`flex items-center bg-[#1e293b] rounded border p-1 focus-within:border-amber-500 transition-colors ${inputWarning ? 'border-amber-500/50' : 'border-slate-600'}`}>
                                 <Navigation className="ml-2 w-4 h-4 text-slate-500" />
@@ -173,7 +288,7 @@ export const TripPlanner: React.FC = () => {
                                     value={end}
                                     onChange={e => handleInputChange(setEnd, e.target.value)}
                                     className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 h-9 font-mono-tech"
-                                    placeholder="City, State"
+                                    placeholder="City, State or ZIP"
                                 />
                             </div>
                         </div>
@@ -187,7 +302,18 @@ export const TripPlanner: React.FC = () => {
                     )}
 
                     <div>
-                        <label className="block text-xs text-slate-400 font-mono-tech mb-3 uppercase">Service Filter</label>
+                        <div className="flex items-center justify-between mb-3">
+                            <label className="block text-xs text-slate-400 font-mono-tech uppercase">Service Filter</label>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={selectAllServices} className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 font-mono-tech uppercase tracking-wider transition-colors">
+                                    <CheckCheck className="w-3 h-3" /> Select All
+                                </button>
+                                <span className="text-slate-600">|</span>
+                                <button type="button" onClick={clearAllServices} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-red-400 font-mono-tech uppercase tracking-wider transition-colors">
+                                    <X className="w-3 h-3" /> Clear All
+                                </button>
+                            </div>
+                        </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                             {availableTypes.map(type => (
                                 <button
@@ -206,14 +332,22 @@ export const TripPlanner: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="flex justify-end pt-4 border-t border-slate-700">
+                    <div className="flex flex-col sm:flex-row justify-between items-center pt-4 border-t border-slate-700 gap-3">
+                        {loading && searchStep ? (
+                            <div className="flex items-center gap-2 text-sm text-amber-400 font-mono-tech animate-pulse">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                {searchStep}
+                            </div>
+                        ) : (
+                            <div />
+                        )}
                         <button
                             type="submit"
                             disabled={loading}
                             className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded px-8 py-3 font-bold font-mono-tech flex items-center gap-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
                         >
                             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Navigation className="w-5 h-5" />}
-                            CALCULATE ROUTE & SCAN
+                            {loading ? 'SCANNING ROUTE...' : 'CALCULATE ROUTE & SCAN'}
                         </button>
                     </div>
                 </form>
@@ -261,6 +395,13 @@ export const TripPlanner: React.FC = () => {
                         </div>
                     </div>
 
+                    {masterTrip && (
+                        <div className="text-xs text-slate-500 font-mono-tech flex items-center gap-2">
+                            <CheckCheck className="w-3 h-3 text-emerald-500" />
+                            Filters apply instantly from cached data — no reload needed
+                        </div>
+                    )}
+
                     <div className="space-y-12">
                         {locations.map((loc, idx) => (
                             <div key={idx} className="relative">
@@ -284,6 +425,31 @@ export const TripPlanner: React.FC = () => {
                                 </div>
                             </div>
                         ))}
+                    </div>
+
+                    {/* Bottom export bar — mirrors the top one for long trips */}
+                    <div className="flex items-center justify-between p-4 bg-slate-900 border border-slate-800 rounded-lg flex-wrap gap-4 mt-4">
+                        <p className="text-sm text-slate-400 font-mono-tech">Export complete manifest</p>
+                        <div className="flex gap-2 flex-wrap">
+                            <button
+                                onClick={() => generateCSV(trip!)}
+                                className="bg-emerald-900/30 hover:bg-emerald-800/50 border border-emerald-500/30 text-emerald-400 px-4 py-2 rounded flex items-center gap-2 font-mono-tech text-sm transition-colors"
+                            >
+                                <FileText className="w-4 h-4" /> CSV
+                            </button>
+                            <button
+                                onClick={() => exportTripSentinelZip(trip!)}
+                                className="bg-amber-900/30 hover:bg-amber-800/50 border border-amber-500/30 text-amber-400 px-4 py-2 rounded flex items-center gap-2 font-mono-tech text-sm transition-colors"
+                            >
+                                <Zap className="w-4 h-4" /> SDS100
+                            </button>
+                            <button
+                                onClick={() => generateTripPDF(trip!)}
+                                className="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded flex items-center gap-2 font-mono-tech text-sm transition-colors"
+                            >
+                                <FileDown className="w-4 h-4" /> PDF
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

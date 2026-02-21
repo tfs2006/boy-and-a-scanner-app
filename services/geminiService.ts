@@ -345,7 +345,7 @@ function filterDataByServices(data: ScanResult | null, services: ServiceType[]):
   return result;
 }
 
-function filterTripByServices(trip: TripResult | null, services: ServiceType[]): TripResult | null {
+export function filterTripByServices(trip: TripResult | null, services: ServiceType[]): TripResult | null {
   if (!trip) return null;
   const result = JSON.parse(JSON.stringify(trip));
 
