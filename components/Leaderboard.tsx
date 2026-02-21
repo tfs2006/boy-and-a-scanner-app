@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trophy, Ear, Radio, Flame, Star, Zap, RefreshCw, TrendingUp, Users, Award } from 'lucide-react';
 import { LeaderboardEntry, UserStats } from '../types';
-import { getLeaderboard, getMyStats, getBadge } from '../services/crowdsourceService';
+import { getLeaderboard, getMyStats, getBadge, getBadgeProgress, getBadgePercent } from '../services/crowdsourceService';
 
 interface LeaderboardProps {
   currentUserId?: string;
@@ -276,26 +276,4 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ currentUserId }) => {
   );
 };
 
-// ---------------------------------------------------------------------------
-// Helpers for progress bar
-// ---------------------------------------------------------------------------
-const BADGE_THRESHOLDS = [
-  { badge: 'Scanner', min: 20 },
-  { badge: 'Pro Scanner', min: 75 },
-  { badge: 'Regional Expert', min: 200 },
-  { badge: 'Elite', min: 500 },
-];
-
-function getBadgeProgress(points: number): string {
-  const next = BADGE_THRESHOLDS.find(t => points < t.min);
-  if (!next) return 'Max rank reached!';
-  return `${next.badge} (${next.min - points} pts away)`;
-}
-
-function getBadgePercent(points: number): number {
-  const next = BADGE_THRESHOLDS.find(t => points < t.min);
-  if (!next) return 100;
-  const prev = BADGE_THRESHOLDS[BADGE_THRESHOLDS.indexOf(next) - 1];
-  const floor = prev?.min ?? 0;
-  return Math.min(100, Math.round(((points - floor) / (next.min - floor)) * 100));
-}
+// getBadgeProgress and getBadgePercent are imported from crowdsourceService (single source of truth)

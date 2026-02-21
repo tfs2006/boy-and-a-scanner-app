@@ -274,7 +274,7 @@ function App() {
 
     const startTime = performance.now();
 
-    const geoId = navigator.geolocation.getCurrentPosition(
+    navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
         const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
@@ -986,7 +986,7 @@ function App() {
                   </div>
                   <FrequencyDisplay
                     data={result}
-                    locationQuery={result.locationName}
+                    locationQuery={searchQuery}
                     isLoggedIn={!!session}
                   />
 
@@ -1029,7 +1029,7 @@ function App() {
             {
               showContribute && (
                 <ContributeModal
-                  locationQuery={result?.locationName || ''}
+                  locationQuery={searchQuery}
                   onClose={() => setShowContribute(false)}
                 />
               )

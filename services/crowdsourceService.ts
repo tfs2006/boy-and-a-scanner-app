@@ -17,14 +17,35 @@ export const POINTS = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Badge thresholds
+// Badge thresholds — single source of truth used by both service and UI
 // ---------------------------------------------------------------------------
+export const BADGE_THRESHOLDS = [
+  { badge: 'Scanner',         min: 20 },
+  { badge: 'Pro Scanner',     min: 75 },
+  { badge: 'Regional Expert', min: 200 },
+  { badge: 'Elite',           min: 500 },
+] as const;
+
 export function getBadge(points: number): UserStats['badge'] {
   if (points >= 500) return 'Elite';
   if (points >= 200) return 'Regional Expert';
   if (points >= 75) return 'Pro Scanner';
   if (points >= 20) return 'Scanner';
   return 'Listener';
+}
+
+export function getBadgeProgress(points: number): string {
+  const next = BADGE_THRESHOLDS.find(t => points < t.min);
+  if (!next) return 'Max rank reached!';
+  return `${next.badge} (${next.min - points} pts away)`;
+}
+
+export function getBadgePercent(points: number): number {
+  const next = BADGE_THRESHOLDS.find(t => points < t.min);
+  if (!next) return 100;
+  const prev = BADGE_THRESHOLDS[BADGE_THRESHOLDS.indexOf(next) - 1];
+  const floor = prev?.min ?? 0;
+  return Math.min(100, Math.round(((points - floor) / (next.min - floor)) * 100));
 }
 
 // ---------------------------------------------------------------------------

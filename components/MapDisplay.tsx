@@ -33,7 +33,7 @@ const RecenterMap = ({ coords }: { coords: { lat: number; lng: number } }) => {
 };
 
 export const MapDisplay: React.FC<MapDisplayProps> = ({ coords, locationName }) => {
-    if (!coords || !coords.lat || !coords.lng) return null;
+    if (!coords || coords.lat == null || coords.lng == null) return null;
 
     return (
         <div className="h-64 w-full rounded-lg overflow-hidden border border-slate-700 shadow-lg relative z-0 animate-fade-in mb-8">
