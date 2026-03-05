@@ -14,7 +14,7 @@ echo "  BOY & A SCANNER — PRE-CACHER SETUP"
 echo "  Install dir: $INSTALL_DIR"
 echo "═══════════════════════════════════════════════════════"
 
-# ─── Step 1: Install Node.js 20 LTS ───────────────────────
+# ─── Step 1: Install Node.js 20 LTS + git ─────────────────
 
 if ! command -v node &> /dev/null || [[ $(node -v | cut -d'.' -f1 | tr -d 'v') -lt 20 ]]; then
   echo ""
@@ -23,6 +23,13 @@ if ! command -v node &> /dev/null || [[ $(node -v | cut -d'.' -f1 | tr -d 'v') -
   sudo apt-get install -y nodejs
 else
   echo "▸ Node.js $(node -v) already installed ✓"
+fi
+
+if ! command -v git &> /dev/null; then
+  echo "▸ Installing git..."
+  sudo apt-get install -y git
+else
+  echo "▸ git $(git --version | awk '{print $3}') already installed ✓"
 fi
 
 # ─── Step 2: Install npm dependencies ─────────────────────
@@ -44,10 +51,15 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
   echo "║                                                      ║"
   echo "║  nano $INSTALL_DIR/.env                              ║"
   echo "║                                                      ║"
-  echo "║  Fill in:                                            ║"
+  echo "║  Required:                                           ║"
   echo "║    GEMINI_API_KEY=...                                ║"
   echo "║    SUPABASE_URL=...                                  ║"
   echo "║    SUPABASE_ANON_KEY=...                             ║"
+  echo "║                                                      ║"
+  echo "║  For SEO page publishing (optional but recommended): ║"
+  echo "║    GITHUB_TOKEN=...   (repo scope PAT)               ║"
+  echo "║    GITHUB_REPO=...    (e.g. youruser/scanner-pages)  ║"
+  echo "║    SEO_SITE_URL=...   (https://www.yoursite.com)     ║"
   echo "╚══════════════════════════════════════════════════════╝"
   echo ""
   echo "After editing .env, run this script again to finish setup."
@@ -65,7 +77,16 @@ fi
 
 echo "▸ .env found with credentials ✓"
 
-# ─── Step 4: Create systemd service ───────────────────────
+# Warn if SEO vars are missing (non-fatal)
+if [[ -z "$GITHUB_TOKEN" || "$GITHUB_TOKEN" == "your_github_token_here" ]]; then
+  echo ""
+  echo "  ℹ️  GITHUB_TOKEN not set — SEO page publishing will be skipped."
+  echo "     To enable it, add to .env:"
+  echo "       GITHUB_TOKEN=ghp_..."
+  echo "       GITHUB_REPO=youruser/scanner-seo-pages"
+  echo "       SEO_SITE_URL=https://www.boyandascanner.com"
+  echo ""
+fi
 
 echo ""
 echo "▸ Creating systemd service..."
@@ -121,6 +142,7 @@ echo "  Commands:"
 echo "    Start timer now:     sudo systemctl start precacher.timer"
 echo "    Run once manually:   node precacher.mjs --test"
 echo "    Run full manually:   node precacher.mjs"
+echo "    SEO only:            node precacher.mjs --seo-only"
 echo "    Check timer status:  systemctl status precacher.timer"
 echo "    View logs:           journalctl -u precacher.service -f"
 echo "    Stop timer:          sudo systemctl stop precacher.timer"
