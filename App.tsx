@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
 import { SearchResponse, ScanResult, ServiceType } from './types';
@@ -61,6 +61,23 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // URL param: auto-search when arriving from SEO frequency pages (?q=ZIP)
+  const pendingUrlQuery = useRef<string | null>(
+    new URLSearchParams(window.location.search).get('q')
+  );
+  useEffect(() => {
+    if (pendingUrlQuery.current) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+  useEffect(() => {
+    if (session && !authLoading && pendingUrlQuery.current) {
+      const q = pendingUrlQuery.current;
+      pendingUrlQuery.current = null;
+      handleFavoriteClick(q);
+    }
+  }, [session, authLoading]);
 
   const availableTypes: ServiceType[] = [
     'Police',
@@ -478,6 +495,15 @@ function App() {
                   className="p-1.5 sm:p-2 text-slate-400 hover:text-cyan-400 transition-colors rounded-lg hover:bg-slate-800"
                 >
                   <Globe className="w-4 h-4" />
+                </a>
+                <a
+                  href="https://scanner-seo-pages.vercel.app/frequencies"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Frequency Directory"
+                  className="p-1.5 sm:p-2 text-slate-400 hover:text-violet-400 transition-colors rounded-lg hover:bg-slate-800"
+                >
+                  <List className="w-4 h-4" />
                 </a>
                 <a
                   href="https://shop.boyandascanner.com"
@@ -998,6 +1024,18 @@ function App() {
                         <BookOpen className="w-5 h-5" />
                         <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Manual</span>
                       </button>
+                      {/^\d{5}$/.test(searchQuery.trim()) && (
+                        <a
+                          href={`https://scanner-seo-pages.vercel.app/frequencies/${searchQuery.trim()}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-violet-900/40 border-violet-500/60 text-violet-400 hover:bg-violet-900/60 hover:text-white transition-all shadow-lg shadow-violet-900/20 hover:scale-105"
+                          title="View shareable frequency page"
+                        >
+                          <List className="w-5 h-5" />
+                          <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Frequency Page</span>
+                        </a>
+                      )}
                     </div>
                   </div>
 
