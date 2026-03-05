@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { TripResult, ServiceType, ScanResult } from '../types';
 import { planTrip, filterTripByServices } from '../services/geminiService';
 import { generateTripPDF } from '../utils/pdfGenerator';
 import { generateCSV } from '../utils/csvGenerator';
 import { exportTripSentinelZip } from '../utils/sentinelExporter';
 import { isValidLocationInput } from '../utils/security';
-import { Map, MapPin, Navigation, FileDown, Loader2, CheckSquare, Square, AlertTriangle, Zap, Bot, Timer, BookOpen, FileText, ArrowLeftRight, History, X, CheckCheck } from 'lucide-react';
+import { Map, MapPin, Navigation, FileDown, Loader2, CheckSquare, Square, AlertTriangle, Zap, Bot, Timer, BookOpen, FileText, ArrowLeftRight, History, X, CheckCheck, LinkIcon } from 'lucide-react';
 import { FrequencyDisplay } from './FrequencyDisplay';
 import { ProgrammingManual } from './ProgrammingManual';
 
@@ -210,6 +210,45 @@ export const TripPlanner: React.FC = () => {
 
     // Defensive: Ensure locations is an array
     const locations = trip?.locations || [];
+
+    // Cross-border coverage hints: find agencies/systems appearing in 2+ zones
+    const crossBorderHints = useMemo<Map<number, string[]>>(() => {
+        if (!trip || locations.length < 2) return new Map();
+        // Normalize a name for comparison
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+        // Build a map: normalizedName → set of zone indices where it appears
+        const nameToZones = new Map<string, Set<number>>();
+        locations.forEach((loc, idx) => {
+            const names = [
+                ...loc.data.agencies.map(a => norm(a.name)),
+                ...loc.data.trunkedSystems.map(s => norm(s.name)),
+            ];
+            for (const n of names) {
+                if (!n) continue;
+                if (!nameToZones.has(n)) nameToZones.set(n, new Set());
+                nameToZones.get(n)!.add(idx);
+            }
+        });
+        // Collect hints per zone: list shared system names when appearing in multiple zones
+        const result = new Map<number, string[]>();
+        nameToZones.forEach((zones, normName) => {
+            if (zones.size < 2) return;
+            // Find the display name (search agencies first, then trunked)
+            let displayName = normName;
+            for (const loc of locations) {
+                const a = loc.data.agencies.find(a => norm(a.name) === normName);
+                if (a) { displayName = a.name; break; }
+                const t = loc.data.trunkedSystems.find(s => norm(s.name) === normName);
+                if (t) { displayName = t.name; break; }
+            }
+            zones.forEach(zoneIdx => {
+                if (!result.has(zoneIdx)) result.set(zoneIdx, []);
+                const otherZones = [...zones].filter(z => z !== zoneIdx).map(z => `Zone ${z + 1}`).join(', ');
+                result.get(zoneIdx)!.push(`${displayName} (also in ${otherZones})`);
+            });
+        });
+        return result;
+    }, [trip, locations]);
 
     return (
         <div className="animate-fade-in max-w-5xl mx-auto">
@@ -419,13 +458,30 @@ export const TripPlanner: React.FC = () => {
                                             <span className="text-amber-500">ZONE {idx + 1}:</span> {loc.locationName}
                                         </h4>
 
-                                        <button
-                                            onClick={() => setSelectedManualData(loc.data)}
-                                            className="self-start sm:self-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-blue-500/30 bg-blue-900/20 text-blue-400 hover:bg-blue-900/40 hover:text-white transition-colors text-xs font-mono-tech font-bold uppercase"
-                                        >
-                                            <BookOpen className="w-3 h-3" />
-                                            <span>Manual</span>
-                                        </button>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            {crossBorderHints.get(idx) && crossBorderHints.get(idx)!.length > 0 && (
+                                                <div className="group relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-cyan-600/40 bg-cyan-900/20 text-cyan-400 text-[10px] font-mono-tech font-bold uppercase cursor-default">
+                                                    <LinkIcon className="w-3 h-3 shrink-0" />
+                                                    ⚡ {crossBorderHints.get(idx)!.length} cross-border
+                                                    {/* Tooltip */}
+                                                    <div className="pointer-events-none absolute bottom-full left-0 mb-2 w-64 bg-slate-900 border border-cyan-700/40 rounded-lg p-2.5 text-left opacity-0 group-hover:opacity-100 transition-opacity z-20 shadow-xl">
+                                                        <p className="text-[10px] font-bold text-cyan-400 uppercase mb-1">Shared with other zones:</p>
+                                                        <ul className="space-y-0.5">
+                                                            {crossBorderHints.get(idx)!.map((hint, hi) => (
+                                                                <li key={hi} className="text-[10px] text-slate-300">• {hint}</li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <button
+                                                onClick={() => setSelectedManualData(loc.data)}
+                                                className="self-start sm:self-auto inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-blue-500/30 bg-blue-900/20 text-blue-400 hover:bg-blue-900/40 hover:text-white transition-colors text-xs font-mono-tech font-bold uppercase"
+                                            >
+                                                <BookOpen className="w-3 h-3" />
+                                                <span>Manual</span>
+                                            </button>
+                                        </div>
                                     </div>
                                     <FrequencyDisplay data={loc.data} />
                                 </div>

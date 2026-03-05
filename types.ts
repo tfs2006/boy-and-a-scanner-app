@@ -18,6 +18,8 @@ export interface Agency {
   origin?: 'RR' | 'AI'; // Track source of data
 }
 
+export type TalkgroupTagType = 'dispatch' | 'tactical' | 'talkthrough' | 'supervision' | 'data' | 'unknown';
+
 export interface Talkgroup {
   dec: string;
   hex?: string;
@@ -26,6 +28,7 @@ export interface Talkgroup {
   description: string;
   tag: string;
   colorCode?: string; // For DMR TG
+  tagType?: TalkgroupTagType; // Inferred channel purpose
 }
 
 export interface TrunkedSystemFreq {
@@ -57,6 +60,7 @@ export interface ScanResult {
   crossRef?: CrossRefData;
   agencies: Agency[];
   trunkedSystems: TrunkedSystem[];
+  dataQualityWarnings?: string[]; // Set post-merge when AI data has suspicious values
 }
 
 export interface TripLocation {

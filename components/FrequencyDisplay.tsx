@@ -412,9 +412,55 @@ const AgencyCard: React.FC<AgencyCardProps> = ({ agency, locationQuery, counts, 
   );
 };
 
+import { TalkgroupTagType } from '../types';
+
+// ---------------------------------------------------------------------------
+// Talkgroup tag-type styling
+// ---------------------------------------------------------------------------
+const TAG_TYPE_CONFIG: Record<TalkgroupTagType, { label: string; cls: string }> = {
+  dispatch:    { label: 'Dispatch',    cls: 'bg-red-900/40 border-red-500/50 text-red-400' },
+  tactical:    { label: 'Tactical',    cls: 'bg-amber-900/40 border-amber-500/50 text-amber-400' },
+  talkthrough: { label: 'Talk-Around', cls: 'bg-emerald-900/40 border-emerald-500/50 text-emerald-400' },
+  supervision: { label: 'Supervision', cls: 'bg-blue-900/40 border-blue-500/50 text-blue-400' },
+  data:        { label: 'Data',        cls: 'bg-slate-800 border-slate-600 text-slate-400' },
+  unknown:     { label: '',            cls: '' },
+};
+
+const TalkgroupTagBadge: React.FC<{ tagType?: TalkgroupTagType }> = ({ tagType }) => {
+  if (!tagType || tagType === 'unknown') return null;
+  const cfg = TAG_TYPE_CONFIG[tagType];
+  return (
+    <span className={`text-[9px] font-bold font-mono-tech px-1.5 py-0.5 rounded border ${cfg.cls}`}>
+      {cfg.label}
+    </span>
+  );
+};
+
+const TG_FILTER_OPTIONS: Array<{ key: TalkgroupTagType | 'all'; label: string }> = [
+  { key: 'all',        label: 'All' },
+  { key: 'dispatch',   label: 'Dispatch' },
+  { key: 'tactical',   label: 'Tactical' },
+  { key: 'supervision',label: 'Supervision' },
+  { key: 'talkthrough',label: 'Talk-Around' },
+  { key: 'data',       label: 'Data' },
+];
+
 const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
   const talkgroups = system.talkgroups || [];
   const frequencies = system.frequencies || [];
+
+  const [tgFilter, setTgFilter] = useState<TalkgroupTagType | 'all'>('all');
+
+  // Determine which tag types are actually present in this system
+  const presentTagTypes = useMemo(() => {
+    const s = new Set<TalkgroupTagType>();
+    talkgroups.forEach(tg => { if (tg.tagType && tg.tagType !== 'unknown') s.add(tg.tagType); });
+    return s;
+  }, [talkgroups]);
+
+  const filteredTGs = useMemo(() =>
+    tgFilter === 'all' ? talkgroups : talkgroups.filter(tg => tg.tagType === tgFilter),
+  [talkgroups, tgFilter]);
 
   return (
     <div className="bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden mb-6 shadow-lg backdrop-blur-sm">
@@ -447,6 +493,39 @@ const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
             ))}
           </div>
         )}
+
+        {/* Talkgroup channel-type filter — only show when classified TGs exist */}
+        {presentTagTypes.size > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-mono-tech text-slate-500 uppercase tracking-wider mr-1">Channel type:</span>
+            {TG_FILTER_OPTIONS.filter(o => o.key === 'all' || presentTagTypes.has(o.key as TalkgroupTagType)).map(opt => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setTgFilter(opt.key as TalkgroupTagType | 'all')}
+                className={`px-2.5 py-1 rounded-full border text-[10px] font-bold font-mono-tech transition-all ${
+                  tgFilter === opt.key
+                    ? opt.key === 'all'
+                      ? 'bg-slate-600 border-slate-400 text-white'
+                      : TAG_TYPE_CONFIG[opt.key as TalkgroupTagType].cls
+                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white'
+                }`}
+              >
+                {opt.label}
+                {opt.key !== 'all' && tgFilter !== opt.key && (
+                  <span className="ml-1 opacity-50">
+                    {talkgroups.filter(tg => tg.tagType === opt.key).length}
+                  </span>
+                )}
+              </button>
+            ))}
+            {tgFilter !== 'all' && (
+              <span className="text-[10px] font-mono-tech text-slate-500 ml-1">
+                {filteredTGs.length}/{talkgroups.length} shown
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto max-h-96 overflow-y-auto">
@@ -461,13 +540,18 @@ const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700/50">
-            {talkgroups.map((tg, idx) => (
+            {filteredTGs.map((tg, idx) => (
               <React.Fragment key={idx}>
                 {/* Desktop Row */}
                 <tr className="hidden md:table-row hover:bg-slate-700/30 transition-colors">
                   <td className="px-4 py-3 font-mono-tech text-purple-300 font-bold">{tg.dec}</td>
                   <td className="px-4 py-3 font-mono-tech text-xs">{tg.mode}</td>
-                  <td className="px-4 py-3 font-medium text-slate-200">{tg.alphaTag}</td>
+                  <td className="px-4 py-3 font-medium text-slate-200">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {tg.alphaTag}
+                      <TalkgroupTagBadge tagType={tg.tagType} />
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <span className="text-xs px-2 py-0.5 rounded-full border border-slate-600 bg-slate-800 text-slate-400">
                       {tg.tag}
@@ -488,8 +572,9 @@ const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
                         {tg.tag}
                       </span>
                     </div>
-                    <div className="mb-1">
-                      <span className="font-bold text-slate-200 block">{tg.alphaTag}</span>
+                    <div className="mb-1 flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-slate-200">{tg.alphaTag}</span>
+                      <TalkgroupTagBadge tagType={tg.tagType} />
                     </div>
                     <div className="text-sm text-slate-400">
                       {tg.description}
@@ -521,11 +606,26 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
   // --- Text search within results ---
   const [searchText, setSearchText] = useState('');
 
+  // --- Frequency range filter ---
+  const freqBounds = useMemo(() => {
+    const vals = agencies.flatMap(a => a.frequencies.map(f => parseFloat(f.freq))).filter(v => !isNaN(v));
+    if (vals.length === 0) return null;
+    const lo = Math.floor(Math.min(...vals) / 5) * 5;
+    const hi = Math.ceil(Math.max(...vals) / 5) * 5;
+    return lo < hi ? [lo, hi] as [number, number] : null;
+  }, [data]);
+  const [freqRange, setFreqRange] = useState<[number, number] | null>(null);
+
   // Reset filters and search whenever the result data changes (new search)
   useEffect(() => {
     setActiveFilters(new Set());
     setSearchText('');
+    setFreqRange(null); // resets to full bounds
   }, [data]);
+
+  const activeLow  = freqRange?.[0] ?? freqBounds?.[0] ?? 0;
+  const activeHigh = freqRange?.[1] ?? freqBounds?.[1] ?? 999999;
+  const rangeActive = freqBounds !== null && (activeLow !== freqBounds[0] || activeHigh !== freqBounds[1]);
 
   // Detect which filter types are actually present in this result
   const presentFilters = useMemo(() => detectPresentFilters(data), [data]);
@@ -556,6 +656,14 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
           freqs = []; // Only system-type filters active, no conv keys match
         }
 
+        // Apply frequency range filter
+        if (freqBounds) {
+          freqs = freqs.filter(f => {
+            const v = parseFloat(f.freq);
+            return isNaN(v) || (v >= activeLow && v <= activeHigh);
+          });
+        }
+
         // Apply text search
         if (needle) {
           const agencyMatch = agency.name.toLowerCase().includes(needle) || agency.category.toLowerCase().includes(needle);
@@ -574,7 +682,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
         return { ...agency, frequencies: freqs };
       })
       .filter(a => a.frequencies.length > 0);
-  }, [agencies, activeFilters, searchText]);
+  }, [agencies, activeFilters, searchText, activeLow, activeHigh, freqBounds]);
 
   // Compute filtered trunked systems
   const filteredSystems = useMemo(() => {
@@ -712,6 +820,19 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
         </div>
       )}
 
+      {data.dataQualityWarnings && data.dataQualityWarnings.length > 0 && (
+        <div className="bg-amber-900/10 border border-amber-700/30 rounded p-3 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+          <div>
+            <h4 className="text-xs font-bold text-amber-500 uppercase font-mono-tech mb-1">Data Quality Notice — AI Source</h4>
+            <ul className="text-xs text-slate-400 space-y-0.5">
+              {data.dataQualityWarnings.map((w, i) => <li key={i}>• {w}</li>)}
+            </ul>
+            <p className="text-[10px] text-slate-500 mt-1">Verify frequencies before programming your scanner.</p>
+          </div>
+        </div>
+      )}
+
       {/* System Type Filter — only rendered when multiple types are present */}
       <SystemTypeFilter
         presentFilters={presentFilters}
@@ -724,25 +845,95 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
         systemCountFiltered={filteredSystems.length}
       />
 
-      {/* Text search within results */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
-        <input
-          type="text"
-          value={searchText}
-          onChange={e => setSearchText(e.target.value)}
-          placeholder="Search agencies, frequencies, alpha tags, talkgroups…"
-          className="w-full pl-9 pr-8 py-2.5 bg-slate-900/60 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-500 font-mono-tech focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition-colors"
-        />
-        {searchText && (
-          <button
-            type="button"
-            onClick={() => setSearchText('')}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
-            title="Clear search"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+      {/* Search + range filter row */}
+      <div className="flex flex-col gap-3">
+        {/* Text search */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+          <input
+            type="text"
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            placeholder="Search agencies, frequencies, alpha tags, talkgroups…"
+            className="w-full pl-9 pr-8 py-2.5 bg-slate-900/60 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-500 font-mono-tech focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition-colors"
+          />
+          {searchText && (
+            <button
+              type="button"
+              onClick={() => setSearchText('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+              title="Clear search"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Frequency range slider — only show when 2+ distinct frequency bands exist */}
+        {freqBounds && (
+          <div className={`px-4 py-3 rounded-lg border transition-colors ${
+            rangeActive ? 'bg-cyan-900/10 border-cyan-700/40' : 'bg-slate-900/40 border-slate-700'
+          }`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-mono-tech uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Signal className="w-3 h-3" /> Frequency Band
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-mono-tech font-bold text-amber-400">
+                  {activeLow.toFixed(1)} – {activeHigh.toFixed(1)} MHz
+                </span>
+                {rangeActive && (
+                  <button
+                    type="button"
+                    onClick={() => setFreqRange(null)}
+                    className="text-[10px] font-mono-tech text-slate-500 hover:text-white flex items-center gap-1 transition-colors"
+                  >
+                    <X className="w-2.5 h-2.5" /> Reset
+                  </button>
+                )}
+              </div>
+            </div>
+            {/* Dual-handle slider using two stacked range inputs */}
+            <div className="relative h-5 flex items-center">
+              <div className="absolute inset-x-0 h-1 bg-slate-700 rounded-full">
+                <div
+                  className="absolute h-1 bg-cyan-500 rounded-full"
+                  style={{
+                    left: `${((activeLow - freqBounds[0]) / (freqBounds[1] - freqBounds[0])) * 100}%`,
+                    right: `${100 - ((activeHigh - freqBounds[0]) / (freqBounds[1] - freqBounds[0])) * 100}%`,
+                  }}
+                />
+              </div>
+              <input
+                type="range"
+                min={freqBounds[0]}
+                max={freqBounds[1]}
+                step={0.5}
+                value={activeLow}
+                onChange={e => {
+                  const v = Math.min(parseFloat(e.target.value), activeHigh - 0.5);
+                  setFreqRange([v, activeHigh]);
+                }}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+              />
+              <input
+                type="range"
+                min={freqBounds[0]}
+                max={freqBounds[1]}
+                step={0.5}
+                value={activeHigh}
+                onChange={e => {
+                  const v = Math.max(parseFloat(e.target.value), activeLow + 0.5);
+                  setFreqRange([activeLow, v]);
+                }}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+              />
+            </div>
+            <div className="flex justify-between text-[9px] font-mono-tech text-slate-600 mt-1">
+              <span>{freqBounds[0]} MHz</span>
+              <span>{freqBounds[1]} MHz</span>
+            </div>
+          </div>
         )}
       </div>
 

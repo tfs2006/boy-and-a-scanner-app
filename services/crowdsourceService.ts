@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { addNotification } from './notificationsService';
 import {
   FrequencyReport,
   FrequencyConfirmationCount,
@@ -330,15 +331,30 @@ async function incrementUserStat(
       // Same day = no change to streak
     }
 
+    const oldPoints = existing.total_points || 0;
+    const newPoints = oldPoints + points + streakBonus;
+    const oldBadge = getBadge(oldPoints);
+    const newBadge = getBadge(newPoints);
+
     await supabase
       .from('user_stats')
       .update({
         [field]: (existing[field] || 0) + 1,
-        total_points: (existing.total_points || 0) + points + streakBonus,
+        total_points: newPoints,
         streak_days: newStreak,
         last_activity: new Date().toISOString(),
       })
       .eq('user_id', userId);
+
+    // Notify on badge promotion
+    if (oldBadge !== newBadge) {
+      await addNotification(userId, `Badge Unlocked: ${newBadge} 🏅`, `You've reached ${newPoints} points and earned the ${newBadge} badge. Keep it up!`);
+    }
+    // Notify on streak milestones
+    const streakMilestones = [7, 14, 30, 60, 100];
+    if (streakBonus > 0 && streakMilestones.includes(newStreak)) {
+      await addNotification(userId, `${newStreak}-Day Streak! 🔥`, `You've contributed ${newStreak} days in a row. Amazing dedication!`);
+    }
   } else {
     // Create new stats row
     await supabase.from('user_stats').insert({

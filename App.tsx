@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List } from 'lucide-react';
+import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
 import { SearchResponse, ScanResult, ServiceType } from './types';
@@ -14,7 +14,10 @@ import { Session } from '@supabase/supabase-js';
 import { generateCSV } from './utils/csvGenerator';
 import { generateSentinelExport } from './utils/exportUtils';
 import { exportSentinelZip } from './utils/sentinelExporter';
+import { exportChirpCSV } from './utils/chirpExporter';
 import { getFavorites, addFavorite, removeFavorite, Favorite } from './services/favoritesService';
+import { loadServicePreferences, saveServicePreferences, getLocalServicePreferences } from './services/preferencesService';
+import { getNotifications, getUnreadCount, markAllRead, AppNotification } from './services/notificationsService';
 import { SearchSuggestions, saveSearchToHistory } from './components/SearchSuggestions';
 import { MapDisplay } from './components/MapDisplay';
 import { ComparisonView } from './components/ComparisonView';
@@ -22,6 +25,7 @@ import { SearchForm } from './components/SearchForm';
 import { Leaderboard } from './components/Leaderboard';
 import { ContributeModal } from './components/ContributeModal';
 import { ExploreMap } from './components/ExploreMap';
+import { ProfileModal } from './components/ProfileModal';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -46,10 +50,17 @@ function App() {
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [isSaved, setIsSaved] = useState(false);
 
-  // Service Filters
-  const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(['Police', 'Fire', 'EMS']);
+  // Service Filters — initial value from localStorage, refreshed from Supabase when session loads
+  const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(getLocalServicePreferences);
   const [showFilters, setShowFilters] = useState(false);
+  const [prefsSaved, setPrefsSaved] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Notifications
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
 
 
   // Comparison State
@@ -155,8 +166,38 @@ function App() {
     if (session) {
       checkConnection();
       loadFavorites();
+      // Reload service type preferences from Supabase (may override localStorage)
+      loadServicePreferences(session.user.id).then(prefs => setServiceTypes(prefs));
+      // Load notifications on session start
+      loadNotifications(session.user.id);
     }
   }, [session]);
+
+  // Poll unread notification count every 60 seconds when logged in
+  useEffect(() => {
+    if (!session) return;
+    const interval = setInterval(() => {
+      getUnreadCount(session.user.id).then(setUnreadCount);
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [session]);
+
+  const loadNotifications = async (userId: string) => {
+    const [notifs, count] = await Promise.all([getNotifications(userId), getUnreadCount(userId)]);
+    setNotifications(notifs);
+    setUnreadCount(count);
+  };
+
+  const handleOpenNotifPanel = async () => {
+    setShowNotifPanel(v => !v);
+    if (!showNotifPanel && session) {
+      // Fetch fresh notifications and mark all read
+      const notifs = await getNotifications(session.user.id);
+      setNotifications(notifs);
+      await markAllRead(session.user.id);
+      setUnreadCount(0);
+    }
+  };
 
   // Check if current query is already favorited
   useEffect(() => {
@@ -255,6 +296,12 @@ function App() {
     setServiceTypes(prev =>
       prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
     );
+  };
+
+  const handleSaveDefaults = async () => {
+    await saveServicePreferences(serviceTypes, session?.user.id);
+    setPrefsSaved(true);
+    setTimeout(() => setPrefsSaved(false), 2500);
   };
 
   // Workflow steps for the loading animation
@@ -473,7 +520,7 @@ function App() {
   return (
     <div className="min-h-screen theme-bg-main theme-text-main pb-24 md:pb-20 selection:bg-amber-500/30 transition-colors duration-300">
       {/* Navbar */}
-      <nav className="sticky top-0 z-50 bg-[#0f172a]/95 backdrop-blur-md border-b border-slate-800 select-none">
+      <nav className="sticky top-0 z-50 bg-[#0f172a]/95 backdrop-blur-md border-b border-slate-800 select-none print-hide">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 sm:h-16">
 
@@ -580,6 +627,45 @@ function App() {
 
               {/* Settings + Sign Out */}
               <div className="flex items-center bg-slate-800 rounded-lg border border-slate-700 px-2 sm:px-3 py-1.5 gap-2 sm:gap-3">
+                {/* Notification Bell */}
+                {session && (
+                  <div className="relative">
+                    <button
+                      onClick={handleOpenNotifPanel}
+                      title="Notifications"
+                      className={`relative transition-colors ${unreadCount > 0 ? 'text-amber-400 hover:text-amber-300' : 'text-slate-400 hover:text-cyan-400'}`}
+                    >
+                      <Bell className="w-4 h-4" />
+                      {unreadCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-0.5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center leading-none">
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                      )}
+                    </button>
+                    {/* Dropdown panel */}
+                    {showNotifPanel && (
+                      <div className="absolute right-0 top-8 w-80 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/60 z-[100] overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800">
+                          <span className="text-xs font-bold text-slate-300 font-mono-tech uppercase tracking-wider">Notifications</span>
+                          <button onClick={() => setShowNotifPanel(false)} className="text-slate-500 hover:text-slate-300 transition-colors"><X className="w-3.5 h-3.5" /></button>
+                        </div>
+                        {notifications.length === 0 ? (
+                          <div className="px-4 py-8 text-center text-xs text-slate-500">No notifications yet</div>
+                        ) : (
+                          <ul className="max-h-72 overflow-y-auto divide-y divide-slate-800/60">
+                            {notifications.map(n => (
+                              <li key={n.id} className={`px-4 py-3 ${n.read ? 'opacity-60' : ''}`}>
+                                <p className="text-xs font-semibold text-slate-200">{n.title}</p>
+                                {n.body && <p className="text-[11px] text-slate-400 mt-0.5">{n.body}</p>}
+                                <p className="text-[10px] text-slate-600 mt-1">{new Date(n.created_at).toLocaleString()}</p>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <button
                   onClick={() => setShowRRSettings(!showRRSettings)}
                   title="RadioReference Settings"
@@ -587,6 +673,15 @@ function App() {
                 >
                   <Settings className="w-4 h-4" />
                 </button>
+                {session && (
+                  <button
+                    onClick={() => setShowProfile(true)}
+                    title="Your Profile"
+                    className="text-slate-400 hover:text-cyan-400 transition-colors"
+                  >
+                    <User className="w-4 h-4" />
+                  </button>
+                )}
                 <button
                   onClick={handleSignOut}
                   title="Sign Out"
@@ -884,6 +979,23 @@ function App() {
                           </button>
                         ))}
                       </div>
+                      {/* Save as My Defaults */}
+                      <div className="mt-3 pt-3 border-t border-slate-700 flex items-center justify-between gap-3">
+                        <span className="text-[10px] text-slate-500 font-mono-tech">
+                          {session ? 'Synced to your account' : 'Saved locally (sign in to sync)'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleSaveDefaults}
+                          disabled={prefsSaved}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-bold font-mono-tech uppercase border transition-all ${prefsSaved
+                            ? 'bg-emerald-900/40 border-emerald-600/50 text-emerald-400'
+                            : 'bg-slate-800 border-amber-500/50 text-amber-400 hover:bg-amber-900/30 hover:border-amber-400'
+                          }`}
+                        >
+                          {prefsSaved ? <><CheckSquare className="w-3 h-3" /> Saved!</> : <><Star className="w-3 h-3" /> Save as My Defaults</>}
+                        </button>
+                      </div>
                     </div>
                   )
                 }
@@ -1032,6 +1144,14 @@ function App() {
                         <FileDown className="w-5 h-5" />
                         <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">CSV</span>
                       </button>
+                      <button
+                        onClick={() => exportChirpCSV(result)}
+                        className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-violet-900/40 border-violet-500/60 text-violet-400 hover:bg-violet-900/60 hover:text-white transition-all shadow-lg shadow-violet-900/20 hover:scale-105"
+                        title="Export CHIRP-format CSV for programming handhelds"
+                      >
+                        <FileDown className="w-5 h-5" />
+                        <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">CHIRP</span>
+                      </button>
                       {/* 
                     <button
                       onClick={() => exportSentinelZip(result)}
@@ -1047,6 +1167,14 @@ function App() {
                       >
                         <BookOpen className="w-5 h-5" />
                         <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Manual</span>
+                      </button>
+                      <button
+                        onClick={() => window.print()}
+                        className="print-hide inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-slate-800/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white transition-all shadow-lg hover:scale-105"
+                        title="Print / Save as PDF"
+                      >
+                        <Printer className="w-5 h-5" />
+                        <span className="text-sm font-mono-tech font-bold uppercase tracking-wider hidden sm:inline">Print</span>
                       </button>
                       {/^\d{5}$/.test(searchQuery.trim()) && (
                         <a
@@ -1134,6 +1262,10 @@ function App() {
                 />
               )
             }
+
+            {showProfile && session && (
+              <ProfileModal session={session} onClose={() => setShowProfile(false)} />
+            )}
           </>
         )
         }

@@ -237,3 +237,37 @@
     padding-bottom: env(safe-area-inset-bottom);
   }
 }
+
+/* ─── Print styles — hide chrome, expand content ──────────────────────── */
+@media print {
+  /* Hide non-content UI */
+  nav, footer, .mobile-tab-bar, .print-hide { display: none !important; }
+
+  /* Reset backgrounds to white/black for ink efficiency */
+  body, #root, main {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Remove padding from main so content fills the page */
+  main { padding: 0 !important; margin: 0 !important; }
+
+  /* Make every card and panel visible as light bordered boxes */
+  .bg-slate-800\/50, .bg-slate-900\/60, .bg-slate-800\/60,
+  .bg-emerald-900\/10, .bg-amber-900\/10, .bg-cyan-900\/10,
+  .bg-slate-900, .bg-\[\#0f172a\] {
+    background: #f8f9fa !important;
+    color: black !important;
+    border-color: #ccc !important;
+  }
+
+  /* Keep text readable */
+  .text-white, .text-slate-100, .text-slate-200, .text-slate-300 { color: #111 !important; }
+  .text-slate-400, .text-slate-500, .text-slate-600 { color: #555 !important; }
+  .text-cyan-400, .text-cyan-300 { color: #0068a5 !important; }
+  .text-amber-400, .text-amber-500 { color: #b45309 !important; }
+  .text-emerald-400 { color: #047857 !important; }
+
+  /* Page breaks */
+  .agency-card, .trunked-system-card { page-break-inside: avoid; }
+}

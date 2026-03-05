@@ -7,10 +7,11 @@
 -- 1. Profiles table (public display names, linked to auth.users)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.profiles (
-  user_id    UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  username   TEXT NOT NULL DEFAULT 'Anonymous',
-  avatar_url TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  user_id       UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  username      TEXT NOT NULL DEFAULT 'Anonymous',
+  avatar_url    TEXT,
+  scanner_model TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -116,3 +117,48 @@ DROP TRIGGER IF EXISTS sync_username ON public.profiles;
 CREATE TRIGGER sync_username
   AFTER UPDATE OF username ON public.profiles
   FOR EACH ROW EXECUTE FUNCTION public.sync_username_to_stats();
+
+-- ---------------------------------------------------------------------------
+-- 5. user_preferences — per-user app settings (service type defaults, etc.)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.user_preferences (
+  user_id               UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  default_service_types JSONB NOT NULL DEFAULT '["Police","Fire","EMS"]'::jsonb,
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read their own preferences"
+  ON public.user_preferences FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own preferences"
+  ON public.user_preferences FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own preferences"
+  ON public.user_preferences FOR UPDATE USING (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- 6. notifications — in-app notification bell messages
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  body       TEXT,
+  read       BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can read their own notifications"
+  ON public.notifications FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own notifications"
+  ON public.notifications FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own notifications"
+  ON public.notifications FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE INDEX IF NOT EXISTS notifications_user_read_idx ON public.notifications (user_id, read);

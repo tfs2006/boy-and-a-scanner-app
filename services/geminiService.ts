@@ -212,8 +212,14 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
 
   // 3. Save MASTER RECORD to Cache (Write-Through)
   if (masterData && (masterData.agencies?.length > 0 || masterData.trunkedSystems?.length > 0)) {
+    // Validate AI-sourced data before caching (RR data is authoritative, skip)
+    if (masterData.source !== 'API') {
+      const issues = validateResult(masterData);
+      if (issues.length > 0) masterData.dataQualityWarnings = issues;
+    }
+    // Annotate talkgroup types before caching so cache also has them
+    annotateTalkgroups(masterData);
     console.log(`[Cache Save] Storing Master Record for ${cacheKey}`);
-    // We don't have AI grounding if RR wins/merged, but we can pass null or AI's chunks
     await saveToCache(cacheKey, masterData, masterGrounding);
   }
 
@@ -264,6 +270,53 @@ function mergeResults(rr: ScanResult, ai: ScanResult): ScanResult {
 
 function normalizeName(str: string): string {
   return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// ---------------------------------------------------------------------------
+// Talkgroup tag-type inference — classifies channels by name/description
+// ---------------------------------------------------------------------------
+function inferTalkgroupTagType(tg: { alphaTag: string; description: string; tag: string }): import('../types').TalkgroupTagType {
+  const haystack = `${tg.alphaTag} ${tg.description} ${tg.tag}`.toLowerCase();
+
+  if (/\bdisp(atch)?\b|dispatch|ops disp|cad\b/.test(haystack)) return 'dispatch';
+  if (/\btac\b|tactical|tac\d|ops\d|channel \d|ch\s*\d/.test(haystack)) return 'tactical';
+  if (/\btalk(-?a?round|thru|through)\b|talkthrough|talkaround/.test(haystack)) return 'talkthrough';
+  if (/\bsupervis|command\b|chief\b|admin\b/.test(haystack)) return 'supervision';
+  if (/\bdata\b|telemetry\b|avl\b|gps\b|mdt\b/.test(haystack)) return 'data';
+  return 'unknown';
+}
+
+function annotateTalkgroups(result: ScanResult): void {
+  for (const sys of result.trunkedSystems || []) {
+    for (const tg of sys.talkgroups || []) {
+      if (!tg.tagType) {
+        tg.tagType = inferTalkgroupTagType(tg);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Data quality validation — flags suspicious AI-sourced data
+// ---------------------------------------------------------------------------
+const FREQ_RANGE = { min: 25, max: 3000 }; // MHz
+
+function validateResult(result: ScanResult): string[] {
+  const issues: string[] = [];
+  let badFreqs = 0;
+  let longNames = 0;
+
+  for (const agency of result.agencies || []) {
+    if (agency.name && agency.name.length > 120) longNames++;
+    for (const f of agency.frequencies || []) {
+      const v = parseFloat(f.freq);
+      if (isNaN(v) || v < FREQ_RANGE.min || v > FREQ_RANGE.max) badFreqs++;
+    }
+  }
+
+  if (badFreqs > 0) issues.push(`${badFreqs} out-of-range frequency value${badFreqs > 1 ? 's' : ''} detected`);
+  if (longNames > 0) issues.push(`${longNames} unusually long agency name${longNames > 1 ? 's' : ''} (possible hallucination)`);
+  return issues;
 }
 
 export const planTrip = async (start: string, end: string, userSelectedServices: ServiceType[]): Promise<{ trip: TripResult | null, groundingChunks: any[] }> => {
