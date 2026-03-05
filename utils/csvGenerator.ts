@@ -141,3 +141,48 @@ export const generateCSV = (data: ScanResult | TripResult) => {
 
   downloadCsv(csvContent, filename);
 };
+
+/**
+ * Smart Export — only includes conventional frequencies that have been community-confirmed
+ * at least `minConfirmations` times within the past 7 days.
+ *
+ * @param data         The full ScanResult to filter
+ * @param counts       Map of freq → { count, last_heard } from crowdsource service
+ * @param minConfirmations  Minimum number of community confirmations required
+ */
+export const generateSmartCSV = (
+  data: ScanResult,
+  counts: Map<string, { count: number; last_heard: string | null }>,
+  minConfirmations: number = 1
+) => {
+  const filteredAgencies = data.agencies
+    .map(agency => ({
+      ...agency,
+      frequencies: agency.frequencies.filter(f => (counts.get(f.freq)?.count ?? 0) >= minConfirmations),
+    }))
+    .filter(a => a.frequencies.length > 0);
+
+  if (filteredAgencies.length === 0) {
+    alert(`No frequencies found with ${minConfirmations}+ community confirmation${minConfirmations !== 1 ? 's' : ''}.\n\nTry lowering the threshold or use the regular CSV export.`);
+    return;
+  }
+
+  const filteredData: ScanResult = {
+    ...data,
+    agencies: filteredAgencies,
+    trunkedSystems: [], // Trunked systems don't have per-frequency confirmation counts
+  };
+
+  const allRows = processScanResult(filteredData);
+  const totalFreqs = filteredAgencies.reduce((sum, a) => sum + a.frequencies.length, 0);
+
+  const csvContent = [
+    `# Smart Export — frequencies with >= ${minConfirmations} community confirmation(s) | Generated ${new Date().toLocaleDateString()}`,
+    `# ${totalFreqs} frequencies across ${filteredAgencies.length} agencies`,
+    CSV_HEADERS.join(','),
+    ...allRows.map(row => row.map(escapeCsv).join(','))
+  ].join('\n');
+
+  const filename = `SmartExport_${data.locationName}_min${minConfirmations}conf.csv`.replace(/\s+/g, '_');
+  downloadCsv(csvContent, filename);
+};

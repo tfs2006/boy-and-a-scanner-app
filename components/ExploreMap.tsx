@@ -164,7 +164,7 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
               CACHE EXPLORER
             </h2>
             <p className="text-[10px] text-slate-400 font-mono-tech uppercase tracking-wider">
-              Click any signal to browse cached frequencies instantly
+              Tap or click any signal to browse cached frequencies instantly
             </p>
           </div>
         </div>
@@ -309,7 +309,7 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
               <div className="absolute bottom-3 right-3 z-[400] flex items-center gap-2 px-3 py-2 bg-slate-900/85 backdrop-blur border border-slate-700 rounded-lg pointer-events-none shadow-lg">
                 <MapPin className="w-3.5 h-3.5 text-cyan-400" />
                 <span className="text-[10px] font-mono-tech text-slate-400">
-                  Click a dot to view frequencies
+                  Tap a dot to view frequencies
                 </span>
               </div>
             )}

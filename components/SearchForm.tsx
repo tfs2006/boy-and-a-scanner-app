@@ -107,6 +107,11 @@ export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation
                                 disabled={loading}
                                 onFocus={onInputFocus}
                                 onBlur={onInputBlur}
+                                inputMode="search"
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
                             />
                             <div className="flex items-center gap-1 pr-1">
                                 {onGeoLocation && (
@@ -179,6 +184,8 @@ export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation
                                         }}
                                         placeholder="5-Digit ZIP"
                                         className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono-tech text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none placeholder-slate-600"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
                                     />
                                 </div>
                             </div>
@@ -193,6 +200,7 @@ export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation
                                         onChange={(e) => setCity(e.target.value)}
                                         placeholder="e.g. Springfield"
                                         className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono-tech text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none placeholder-slate-600"
+                                        autoCapitalize="words"
                                     />
                                 </div>
 
@@ -205,6 +213,7 @@ export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation
                                         onChange={(e) => setCounty(e.target.value)}
                                         placeholder="e.g. Cook"
                                         className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono-tech text-sm focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none placeholder-slate-600"
+                                        autoCapitalize="words"
                                     />
                                 </div>
                             </div>

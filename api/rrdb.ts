@@ -55,7 +55,16 @@ async function soapCall(method: string, params: string): Promise<string> {
     throw new Error(`RadioReference API returned ${response.status}`);
   }
 
-  return response.text();
+  const text = await response.text();
+
+  // SOAP faults are sometimes returned as HTTP 200 with a fault body — detect them here
+  const faultMatch = text.match(/<faultstring[^>]*>([^<]+)<\/faultstring>/i);
+  if (faultMatch) {
+    const fault = faultMatch[1].trim();
+    throw new Error(`RR_SOAP_FAULT: ${fault}`);
+  }
+
+  return text;
 }
 
 // --- XML Parsing Helpers ---
@@ -467,11 +476,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error("RR API Error:", error);
 
     const msg = error.message || '';
-    if (msg.includes('401') || msg.includes('authentication') || msg.includes('Invalid')) {
-      return res.status(401).json({ error: 'RadioReference authentication failed. Check your username and password.' });
+
+    // SOAP faults returned as HTTP 200 with a fault body
+    if (msg.startsWith('RR_SOAP_FAULT:')) {
+      const fault = msg.replace('RR_SOAP_FAULT:', '').trim();
+      const isAuthFault = /access denied|invalid|username|password|credentials|not authorized|authentication/i.test(fault);
+      if (isAuthFault) {
+        return res.status(401).json({
+          error: 'RadioReference authentication failed — check your username and password.',
+          errorCode: 'RR_AUTH_FAILED'
+        });
+      }
+      return res.status(400).json({
+        error: `RadioReference error: ${fault}`,
+        errorCode: 'RR_SOAP_FAULT'
+      });
     }
 
-    return res.status(500).json({ error: 'RadioReference API request failed. ' + msg });
+    if (msg.includes('401') || /authentication|invalid.*password|access denied/i.test(msg)) {
+      return res.status(401).json({
+        error: 'RadioReference authentication failed — check your username and password.',
+        errorCode: 'RR_AUTH_FAILED'
+      });
+    }
+
+    if (msg.includes('404') || /zip.*not found|not found.*zip/i.test(msg)) {
+      return res.status(404).json({
+        error: 'ZIP code not found in RadioReference database.',
+        errorCode: 'RR_ZIP_NOT_FOUND'
+      });
+    }
+
+    if (msg.includes('timeout') || msg.includes('ECONNRESET') || msg.includes('network')) {
+      return res.status(503).json({
+        error: 'RadioReference API timed out — try again in a moment.',
+        errorCode: 'RR_TIMEOUT'
+      });
+    }
+
+    return res.status(500).json({
+      error: 'RadioReference API request failed. ' + msg,
+      errorCode: 'RR_UNAVAILABLE'
+    });
   }
 }
 

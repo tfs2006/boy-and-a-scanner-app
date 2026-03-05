@@ -152,6 +152,7 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
 
   // 2. RadioReference Search (Run if credentials exist)
   let rrPromise: Promise<ScanResult | null> = Promise.resolve(null);
+  let rrErrorMessage: string | undefined;
   if (rrCredentials && /^\d{5}$/.test(safeLocation)) {
     rrPromise = (async () => {
       try {
@@ -164,8 +165,9 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
           if (data.trunkedSystems) data.trunkedSystems.forEach((s: any) => s.origin = 'RR');
         }
         return data;
-      } catch (e) {
+      } catch (e: any) {
         console.warn("RR API Error:", e);
+        rrErrorMessage = e.message || 'RadioReference unavailable';
         return null;
       }
     })();
@@ -203,7 +205,7 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
       console.log(`[Cache Backup] Found data.`);
       // Filter and return immediately
       const filteredData = filterDataByServices(cached.data, userSelectedServices);
-      return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: "Retrieved from Cache (Offline Backup)" };
+      return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: "Retrieved from Cache (Offline Backup)", rrError: rrErrorMessage };
     }
     throw new Error("Unable to retrieve frequency data from any source.");
   }
@@ -217,7 +219,7 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
 
   // 4. Return FILTERED data to user
   const filteredData = filterDataByServices(masterData, userSelectedServices);
-  return { data: filteredData, groundingChunks: masterGrounding, rawText };
+  return { data: filteredData, groundingChunks: masterGrounding, rawText, rrError: rrErrorMessage };
 };
 
 // --- Merge Helper ---

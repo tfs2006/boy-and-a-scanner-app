@@ -35,7 +35,9 @@ export const fetchFromRadioReference = async (
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `RadioReference API error (${response.status})`);
+    const err = new Error(errorData.error || `RadioReference API error (${response.status})`);
+    (err as any).rrErrorCode = errorData.errorCode || 'RR_UNAVAILABLE';
+    throw err;
   }
 
   const result = await response.json();

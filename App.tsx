@@ -39,6 +39,7 @@ function App() {
   const [result, setResult] = useState<ScanResult | null>(null);
   const [grounding, setGrounding] = useState<SearchResponse['groundingChunks']>(null);
   const [error, setError] = useState<string | null>(null);
+  const [rrWarning, setRrWarning] = useState<string | null>(null);
   const [showManual, setShowManual] = useState(false);
 
   // Favorites
@@ -358,6 +359,7 @@ function App() {
 
   const performAiSearch = async (query: string) => {
     setError(null);
+    setRrWarning(null);
     const isZip = /^\d{5}$/.test(query.trim());
     if (isZip && rrCredentials) {
       setSearchStep('Connecting to RadioReference Database...');
@@ -366,6 +368,19 @@ function App() {
     }
     try {
       const response = await searchFrequencies(query, serviceTypes, rrCredentials);
+      if (response.rrError) {
+        // RR failed but we may still have AI data — show a targeted warning
+        const msg = response.rrError;
+        if (/auth|password|credentials|access denied/i.test(msg)) {
+          setRrWarning('RadioReference authentication failed — check your username and password in Settings.');
+        } else if (/zip.*not found|not found.*zip/i.test(msg)) {
+          setRrWarning('ZIP code not found in RadioReference database. Showing AI results only.');
+        } else if (/timeout|timed out/i.test(msg)) {
+          setRrWarning('RadioReference timed out. Showing AI results only — try again for full data.');
+        } else {
+          setRrWarning(`RadioReference unavailable: ${msg}. Showing AI results only.`);
+        }
+      }
       if (response.data) {
         setResult(response.data);
         setGrounding(response.groundingChunks);
@@ -398,7 +413,7 @@ function App() {
         <div className="flex items-center gap-4">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-purple-900/30 border-purple-500/50 text-purple-400 animate-pulse-subtle">
             <Zap className="w-4 h-4 fill-purple-400" />
-            <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Source: Cloud Cache</span>
+            <span className="text-xs font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Source: </span>Cloud Cache</span>
           </div>
           {searchTime > 0 && (
             <div className="text-xs font-mono-tech text-emerald-400 flex items-center gap-1">
@@ -414,7 +429,7 @@ function App() {
         <div className="flex items-center gap-4">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-green-900/30 border-green-500/50 text-green-400">
             <Database className="w-4 h-4" />
-            <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Source: RadioReference DB</span>
+            <span className="text-xs font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Source: </span>RadioReference DB</span>
           </div>
           {searchTime > 0 && (
             <div className="text-xs font-mono-tech text-emerald-400 flex items-center gap-1">
@@ -429,7 +444,7 @@ function App() {
       <div className="flex items-center gap-4">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-amber-900/30 border-amber-500/50 text-amber-400">
           <Bot className="w-4 h-4" />
-          <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Source: AI Grounded Search</span>
+          <span className="text-xs font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Source: </span>AI Search</span>
         </div>
         {searchTime > 0 && (
           <div className="text-xs font-mono-tech text-slate-500 flex items-center gap-1">
@@ -898,7 +913,7 @@ function App() {
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); removeFavoriteById(fav.id); }}
-                            className="p-0.5 rounded-full text-slate-600 hover:text-red-400 hover:bg-slate-700 transition-colors opacity-0 group-hover:opacity-100"
+                            className="p-0.5 rounded-full text-slate-500 hover:text-red-400 hover:bg-slate-700 transition-colors md:opacity-0 md:group-hover:opacity-100"
                             title="Remove"
                           >
                             <X className="w-3 h-3" />
@@ -916,6 +931,15 @@ function App() {
                       <AlertCircle className="w-4 h-4" />
                       <span>{error}</span>
                     </div>
+                  </div>
+                )
+              }
+              {
+                rrWarning && (
+                  <div className="max-w-2xl mx-auto mt-4 p-3 border rounded text-sm font-mono-tech flex items-start gap-3 bg-amber-900/20 border-amber-700/50 text-amber-300">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+                    <span className="flex-1">{rrWarning}</span>
+                    <button onClick={() => setRrWarning(null)} className="text-amber-500 hover:text-white shrink-0" title="Dismiss">✕</button>
                   </div>
                 )
               }
@@ -999,7 +1023,7 @@ function App() {
                         title="Copy Conventional Frequencies for Uniden Sentinel (Paste)"
                       >
                         <Copy className="w-5 h-5" />
-                        <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Copy for Sentinel</span>
+                        <span className="text-sm font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Copy for </span>Sentinel</span>
                       </button>
                       <button
                         onClick={() => generateCSV(result)}
@@ -1040,7 +1064,7 @@ function App() {
                   </div>
 
                   {/* Contribute button row */}
-                  <div className="flex justify-end mb-4">
+                  <div className="flex justify-center sm:justify-end mb-4">
                     <button
                       onClick={() => setShowContribute(true)}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-emerald-500/40 bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/40 hover:text-white transition-all text-xs font-bold font-mono-tech"

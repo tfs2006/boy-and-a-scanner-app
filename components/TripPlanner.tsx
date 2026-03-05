@@ -268,6 +268,9 @@ export const TripPlanner: React.FC = () => {
                                     onChange={e => handleInputChange(setStart, e.target.value)}
                                     className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 h-9 font-mono-tech"
                                     placeholder="City, State or ZIP"
+                                    inputMode="search"
+                                    autoCorrect="off"
+                                    autoCapitalize="words"
                                 />
                             </div>
                         </div>
@@ -289,6 +292,9 @@ export const TripPlanner: React.FC = () => {
                                     onChange={e => handleInputChange(setEnd, e.target.value)}
                                     className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-slate-500 h-9 font-mono-tech"
                                     placeholder="City, State or ZIP"
+                                    inputMode="search"
+                                    autoCorrect="off"
+                                    autoCapitalize="words"
                                 />
                             </div>
                         </div>

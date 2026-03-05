@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ScanResult, Agency, TrunkedSystem, FrequencyConfirmationCount } from '../types';
-import { Radio, Shield, Flame, Activity, Hash, Zap, CheckCircle2, AlertTriangle, SearchCheck, Signal, Ear, Loader2, SlidersHorizontal, X } from 'lucide-react';
+import { Radio, Shield, Flame, Activity, Hash, Zap, CheckCircle2, AlertTriangle, SearchCheck, Signal, Ear, Loader2, SlidersHorizontal, X, Search, Download } from 'lucide-react';
 import { logConfirmation, getBatchConfirmationCounts } from '../services/crowdsourceService';
+import { generateSmartCSV } from '../utils/csvGenerator';
 
 // ---------------------------------------------------------------------------
 // System-type filter taxonomy
@@ -517,9 +518,13 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
   // --- System type filter state ---
   const [activeFilters, setActiveFilters] = useState<Set<SystemFilterKey>>(new Set());
 
-  // Reset filters whenever the result data changes (new search)
+  // --- Text search within results ---
+  const [searchText, setSearchText] = useState('');
+
+  // Reset filters and search whenever the result data changes (new search)
   useEffect(() => {
     setActiveFilters(new Set());
+    setSearchText('');
   }, [data]);
 
   // Detect which filter types are actually present in this result
@@ -537,26 +542,70 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
 
   // Compute filtered agencies: keep agencies that have at least one matching frequency
   const filteredAgencies = useMemo(() => {
-    if (activeFilters.size === 0) return agencies;
+    const needle = searchText.trim().toLowerCase();
     const activeConvKeys = CONV_FILTER_KEYS.filter(k => activeFilters.has(k));
-    if (activeConvKeys.length === 0) return []; // only system-type filters active
+
     return agencies
-      .map(agency => ({
-        ...agency,
-        frequencies: (agency.frequencies || []).filter(f =>
-          activeConvKeys.some(k => freqMatchesFilter(f, k))
-        ),
-      }))
+      .map(agency => {
+        let freqs = agency.frequencies || [];
+
+        // Apply system-type filter
+        if (activeFilters.size > 0 && activeConvKeys.length > 0) {
+          freqs = freqs.filter(f => activeConvKeys.some(k => freqMatchesFilter(f, k)));
+        } else if (activeFilters.size > 0 && activeConvKeys.length === 0) {
+          freqs = []; // Only system-type filters active, no conv keys match
+        }
+
+        // Apply text search
+        if (needle) {
+          const agencyMatch = agency.name.toLowerCase().includes(needle) || agency.category.toLowerCase().includes(needle);
+          if (agencyMatch) {
+            // Whole agency matches name/category — keep all its (already type-filtered) freqs
+          } else {
+            freqs = freqs.filter(f =>
+              f.freq.includes(needle) ||
+              (f.alphaTag || '').toLowerCase().includes(needle) ||
+              (f.description || '').toLowerCase().includes(needle) ||
+              (f.mode || '').toLowerCase().includes(needle)
+            );
+          }
+        }
+
+        return { ...agency, frequencies: freqs };
+      })
       .filter(a => a.frequencies.length > 0);
-  }, [agencies, activeFilters]);
+  }, [agencies, activeFilters, searchText]);
 
   // Compute filtered trunked systems
   const filteredSystems = useMemo(() => {
-    if (activeFilters.size === 0) return systems;
+    const needle = searchText.trim().toLowerCase();
     const activeSysKeys = SYS_FILTER_KEYS.filter(k => activeFilters.has(k));
-    if (activeSysKeys.length === 0) return [];
-    return systems.filter(sys => activeSysKeys.some(k => systemMatchesFilter(sys, k)));
-  }, [systems, activeFilters]);
+
+    let filtered = systems;
+
+    // Apply system-type filter
+    if (activeFilters.size > 0) {
+      if (activeSysKeys.length === 0) {
+        filtered = [];
+      } else {
+        filtered = filtered.filter(sys => activeSysKeys.some(k => systemMatchesFilter(sys, k)));
+      }
+    }
+
+    // Apply text search
+    if (needle) {
+      filtered = filtered.filter(sys => {
+        if (sys.name.toLowerCase().includes(needle) || (sys.type || '').toLowerCase().includes(needle) || (sys.location || '').toLowerCase().includes(needle)) return true;
+        return (sys.talkgroups || []).some(tg =>
+          (tg.alphaTag || '').toLowerCase().includes(needle) ||
+          (tg.description || '').toLowerCase().includes(needle) ||
+          String(tg.dec).includes(needle)
+        );
+      });
+    }
+
+    return filtered;
+  }, [systems, activeFilters, searchText]);
 
   // Load batch counts when result changes
   useEffect(() => {
@@ -629,6 +678,27 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
             </div>
             <div className="text-xs text-slate-500 uppercase tracking-wider">Systems</div>
           </div>
+          {/* Smart Export — only shown when community confirmations exist */}
+          {counts.size > 0 && (
+            <div className="bg-slate-900 p-3 rounded border border-slate-800 flex flex-col items-center justify-between gap-1 min-w-[110px]">
+              <div className="text-xs text-emerald-400 font-bold font-mono-tech uppercase">Smart Export</div>
+              <div className="flex gap-1">
+                {[1, 3, 5].map(n => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => generateSmartCSV(data, counts, n)}
+                    title={`Export only frequencies heard ${n}+ time${n !== 1 ? 's' : ''} by the community`}
+                    className="flex items-center gap-0.5 px-1.5 py-1 rounded bg-emerald-900/40 border border-emerald-600/40 text-emerald-400 hover:bg-emerald-800/60 hover:text-white transition-colors text-[10px] font-bold font-mono-tech"
+                  >
+                    <Download className="w-2.5 h-2.5" />
+                    {n}+
+                  </button>
+                ))}
+              </div>
+              <div className="text-[9px] text-slate-500">confirmations</div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -654,6 +724,28 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
         systemCountFiltered={filteredSystems.length}
       />
 
+      {/* Text search within results */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+        <input
+          type="text"
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+          placeholder="Search agencies, frequencies, alpha tags, talkgroups…"
+          className="w-full pl-9 pr-8 py-2.5 bg-slate-900/60 border border-slate-700 rounded-lg text-sm text-slate-200 placeholder-slate-500 font-mono-tech focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition-colors"
+        />
+        {searchText && (
+          <button
+            type="button"
+            onClick={() => setSearchText('')}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors"
+            title="Clear search"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
         <div className="space-y-6">
           <div className="flex items-center gap-2 mb-4 border-b border-slate-700 pb-2">
@@ -672,9 +764,9 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
                 isLoggedIn={isLoggedIn}
               />
             ))
-          ) : activeFilters.size > 0 ? (
+          ) : (activeFilters.size > 0 || searchText) ? (
             <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
-              No conventional agencies match the active filter.
+              No conventional agencies match the active {searchText ? 'search' : 'filter'}.
             </div>
           ) : (
             <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
@@ -690,9 +782,9 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
           </div>
           {filteredSystems.length > 0 ? (
             filteredSystems.map((sys, i) => <TrunkedSystemCard key={i} system={sys} />)
-          ) : activeFilters.size > 0 ? (
+          ) : (activeFilters.size > 0 || searchText) ? (
             <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
-              No trunked systems match the active filter.
+              No trunked systems match the active {searchText ? 'search' : 'filter'}.
             </div>
           ) : (
             <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">

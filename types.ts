@@ -81,6 +81,7 @@ export interface SearchResponse {
   data: ScanResult | null;
   groundingChunks: GroundingChunk[] | null;
   rawText?: string;
+  rrError?: string;  // Set when RadioReference fetch fails, even if AI data was returned
 }
 
 export type ServiceType =
