@@ -526,6 +526,9 @@ function renderSeoPage(zip, entry) {
     .updated { font-size: 0.78rem; color: #475569; margin-top: 0.5rem; }
     footer { background: #1e293b; border-top: 1px solid #334155; padding: 1.5rem; text-align: center; color: #475569; font-size: 0.85rem; }
     footer a { color: #64748b; }
+    .breadcrumb { background: #0f172a; border-bottom: 1px solid #1e293b; padding: 0.5rem 1.5rem; font-size: 0.8rem; color: #475569; display: flex; align-items: center; gap: 0.5rem; }
+    .breadcrumb a { color: #64748b; }
+    .breadcrumb a:hover { color: #38bdf8; }
     @media (max-width: 600px) {
       .hero h2 { font-size: 1.3rem; }
       th, td { padding: 0.4rem 0.5rem; }
@@ -538,6 +541,11 @@ function renderSeoPage(zip, entry) {
     <h1>Scanner Frequencies — ${escapeHtml(locationName)}</h1>
     <a class="cta" href="${appUrl}">Open in App →</a>
   </header>
+  <nav class="breadcrumb">
+    <a href="${SEO_SITE_URL}/frequencies">← All Locations</a>
+    <span>/</span>
+    <span>${escapeHtml(locationName)} (${zip})</span>
+  </nav>
 
   <div class="hero">
     <div class="container">
