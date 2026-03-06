@@ -1,6 +1,6 @@
 
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer } from 'lucide-react';
+import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
 import { SearchResponse, ScanResult, ServiceType } from './types';
@@ -67,6 +67,7 @@ function App() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
 
   // Comparison State
@@ -678,6 +679,15 @@ function App() {
                 <span className="hidden sm:inline">Support</span>
               </a>
 
+              {/* Hamburger - mobile only */}
+              <button
+                onClick={() => setShowMobileMenu(prev => !prev)}
+                className="md:hidden p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                title="Menu"
+              >
+                {showMobileMenu ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+              </button>
+
               {/* Mode Switcher - tablet & desktop only */}
               <div className="hidden md:flex bg-slate-800 rounded-lg p-1 border border-slate-700">
                 <button
@@ -774,6 +784,100 @@ function App() {
             </div>
           </div>
         </div>
+
+        {/* Mobile dropdown menu */}
+        {showMobileMenu && (
+          <div className="md:hidden border-t border-slate-800 bg-[#0f172a]/98 backdrop-blur-md pb-2">
+            {/* Navigate */}
+            <div className="px-4 pt-3 pb-1">
+              <p className="text-[9px] text-slate-500 font-mono-tech uppercase tracking-widest mb-2">Navigate</p>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { key: 'scan',        label: 'LOCAL',   Icon: LocateFixed, color: 'text-cyan-400',   active: 'bg-cyan-600/20 border-cyan-600/40' },
+                  { key: 'trip',        label: 'TRIP',    Icon: Map,         color: 'text-amber-400',  active: 'bg-amber-600/20 border-amber-600/40' },
+                  { key: 'explore',     label: 'EXPLORE', Icon: Globe,       color: 'text-cyan-400',   active: 'bg-cyan-700/20 border-cyan-700/40' },
+                  { key: 'leaderboard', label: 'RANKS',   Icon: Trophy,      color: 'text-yellow-400', active: 'bg-yellow-600/20 border-yellow-600/40' },
+                ] as const).map(({ key, label, Icon, color, active }) => (
+                  <button
+                    key={key}
+                    onClick={() => { setMode(key); setShowMobileMenu(false); }}
+                    className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-mono-tech font-bold transition-colors ${
+                      mode === key ? `${color} ${active} border` : 'text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Links */}
+            <div className="px-4 pt-3 pb-1">
+              <p className="text-[9px] text-slate-500 font-mono-tech uppercase tracking-widest mb-2">Links</p>
+              <div className="flex flex-col gap-1">
+                <a href="https://boyandascanner.com" target="_blank" rel="noopener noreferrer"
+                  onClick={() => setShowMobileMenu(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-cyan-400 transition-colors text-sm">
+                  <Globe className="w-4 h-4 text-cyan-400" />
+                  <span>Main Website</span>
+                </a>
+                <a href="https://scanner-seo-pages.vercel.app/frequencies" target="_blank" rel="noopener noreferrer"
+                  onClick={() => setShowMobileMenu(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-violet-400 transition-colors text-sm">
+                  <List className="w-4 h-4 text-violet-400" />
+                  <span>Frequency Directory</span>
+                </a>
+                <a href="https://shop.boyandascanner.com" target="_blank" rel="noopener noreferrer"
+                  onClick={() => setShowMobileMenu(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-pink-400 transition-colors text-sm">
+                  <ShoppingBag className="w-4 h-4 text-pink-400" />
+                  <span>Merch Store</span>
+                </a>
+                <a href="mailto:contact@boyandascanner.com?subject=Feature%20Request:%20Scan%20App"
+                  onClick={() => setShowMobileMenu(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-emerald-400 transition-colors text-sm">
+                  <MessageSquarePlus className="w-4 h-4 text-emerald-400" />
+                  <span>Request a Feature</span>
+                </a>
+                <a href="https://buymeacoffee.com/boyandascanner" target="_blank" rel="noopener noreferrer"
+                  onClick={() => setShowMobileMenu(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-amber-400 transition-colors text-sm">
+                  <Coffee className="w-4 h-4 text-amber-400" />
+                  <span>Support the Project</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Account */}
+            <div className="px-4 pt-3 border-t border-slate-800/60 mt-1">
+              <p className="text-[9px] text-slate-500 font-mono-tech uppercase tracking-widest mb-2">Account</p>
+              <div className="flex flex-col gap-1">
+                <button
+                  onClick={() => { setShowRRSettings(true); setShowMobileMenu(false); }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-amber-400 transition-colors text-sm text-left">
+                  <Settings className="w-4 h-4 text-amber-400" />
+                  <span>RadioReference Settings</span>
+                  {rrCredentials && <span className="ml-auto text-[10px] text-emerald-400 font-mono-tech">CONNECTED</span>}
+                </button>
+                {session && (
+                  <button
+                    onClick={() => { setShowProfile(true); setShowMobileMenu(false); }}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-cyan-400 transition-colors text-sm text-left">
+                    <User className="w-4 h-4 text-cyan-400" />
+                    <span>My Profile</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => { handleSignOut(); setShowMobileMenu(false); }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-red-400 transition-colors text-sm text-left">
+                  <LogOut className="w-4 h-4 text-red-400" />
+                  <span>Sign Out</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Mobile Bottom Tab Bar - visible only on mobile (hidden md+) */}
