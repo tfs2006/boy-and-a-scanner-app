@@ -35,10 +35,12 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 | Export | Description |
 |--------|-------------|
 | CSV | Spreadsheet-compatible frequency list |
+| Smart CSV | Export only frequencies with a minimum number of community confirmations |
 | Copy for Sentinel | Tab-delimited clipboard copy for paste into Uniden Sentinel |
+| CHIRP CSV | Format compatible with CHIRP radio programming software |
 | Programming Manual | Printable step-by-step SDS100/SDS200 programming guide |
 | Trip PDF | Formatted trip manifest with zone-by-zone frequencies |
-| SDS100 ZIP | Full Sentinel package with CSVs and guides |
+| SDS100 ZIP | Full Sentinel package with CSVs and import guides per zone |
 
 ### Other Features
 - **Saved Locations** — Star searches to personal favorites (synced via Supabase)
@@ -46,6 +48,8 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 - **Service Filter** — 18 service categories (Police, Fire, EMS, Ham, Railroad, Air, Marine, Military, and more)
 - **Comparison View** — Pin one location to compare side-by-side with a second search
 - **Crowdsource** — Submit field-confirmed frequencies; earn points on the leaderboard
+- **User Profiles** — Set a display name and scanner model; profile data is stored in Supabase so scanner usage can be tracked over time
+- **Notification Bell** — In-app notifications for badge unlocks and streak milestones
 - **Dark / Light theme toggle**
 - **Advanced Search** — Filter by State, City, County, or ZIP with structured form fields
 
@@ -176,10 +180,13 @@ Tables are defined in `supabase/crowdsource_schema.sql`:
 
 | Table | Purpose |
 |-------|---------|
-| `search_cache` | Cached results keyed by `v6_loc_{sanitized_location}` |
+| `search_cache` | Cached AI+RR results keyed by `v6_loc_{sanitized_location}` |
 | `favorites` | User-saved locations (RLS-protected by `user_id`) |
-| `frequency_confirmations` | Crowdsourced "Heard It" confirmation logs |
-| `auth.users` | Built-in Supabase Google OAuth users |
+| `profiles` | Public display names, scanner model, and avatar per user |
+| `frequency_reports` | Crowdsourced "Heard It" confirmations and user frequency submissions |
+| `user_stats` | Points, streaks, confirmation/submission counts for the leaderboard |
+| `user_preferences` | Per-user default service type filter settings |
+| `notifications` | In-app notification messages (badge unlocks, streak milestones) |
 
 ---
 
