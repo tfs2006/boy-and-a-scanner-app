@@ -132,6 +132,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    if (!trip || !Array.isArray(trip.locations) || trip.locations.length === 0) {
+      console.error('Trip API returned unparsable or empty AI payload:', text);
+      return res.status(502).json({ error: 'AI returned malformed trip data.' });
+    }
+
     const groundingChunks = usedTools ? (response?.candidates?.[0]?.groundingMetadata?.groundingChunks || []) : [];
 
     return res.status(200).json({ trip, groundingChunks });

@@ -151,6 +151,12 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
    npm run dev
    ```
 
+4. **Run the smoke suite before deploys**
+   ```bash
+   npm run test:smoke
+   ```
+   Vercel production builds now run `npm run build:ci`, which executes the smoke suite before the production build.
+
 ---
 
 ## Environment Variables Reference

@@ -112,17 +112,24 @@ const ALL_SERVICE_TYPES: ServiceType[] = [
   'Business', 'Hospitals', 'Schools', 'Corrections', 'Security', 'Multi-Dispatch'
 ];
 
-export const searchFrequencies = async (locationQuery: string, userSelectedServices: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials): Promise<SearchResponse> => {
+export const searchFrequencies = async (locationQuery: string, userSelectedServices: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials, signal?: AbortSignal): Promise<SearchResponse> => {
   const safeLocation = sanitizeForPrompt(locationQuery);
 
   // Cache Key is now strictly LOCATION based.
   // v6 was the bug fix version.
   const cacheKey = `v6_loc_${safeLocation}`.toLowerCase().replace(/\s+/g, '');
 
+  const cached = await getFromCache(cacheKey, rrCredentials);
+  if (cached) {
+    console.log(`[Cache Hit] Returning cached result for ${safeLocation}.`);
+    const filteredData = filterDataByServices(cached.data, userSelectedServices);
+    return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: 'Retrieved from Cache' };
+  }
+
   console.log(`[Hybrid Search] Starting Fresh Search for ${safeLocation}...`);
 
-  // Parallel Fetch: AI & RadioReference
-  const promises: Promise<ScanResult | null>[] = [];
+  let aiGrounding: any = null;
+  let rawText = '';
 
   // 1. AI Search (Always run)
   const aiPromise = (async () => {
@@ -131,10 +138,16 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal,
         body: JSON.stringify({ location: safeLocation, serviceTypes: ALL_SERVICE_TYPES })
       });
-      if (!response.ok) throw new Error('AI Search Failed');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'AI Search Failed');
+      }
       const json = await response.json();
+      aiGrounding = json.groundingChunks || null;
+      rawText = json.rawText || 'AI Results';
       const data = json.data;
       if (data) {
         data.source = 'AI'; // Ensure source is marked
@@ -143,12 +156,12 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
         if (data.trunkedSystems) data.trunkedSystems.forEach((s: any) => s.origin = 'AI');
       }
       return data;
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.name === 'AbortError') throw e;
       console.warn("AI Search Error:", e);
       return null;
     }
   })();
-  promises.push(aiPromise);
 
   // 2. RadioReference Search (Run if credentials exist)
   let rrPromise: Promise<ScanResult | null> = Promise.resolve(null);
@@ -157,7 +170,7 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
     rrPromise = (async () => {
       try {
         console.log(`[RR API] Fetching for ${safeLocation}...`);
-        const data = await fetchFromRadioReference(safeLocation, rrCredentials, ALL_SERVICE_TYPES);
+        const data = await fetchFromRadioReference(safeLocation, rrCredentials, ALL_SERVICE_TYPES, signal);
         if (data) {
           data.source = 'API';
           // Mark inner items
@@ -166,14 +179,12 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
         }
         return data;
       } catch (e: any) {
+        if (e?.name === 'AbortError') throw e;
         console.warn("RR API Error:", e);
         rrErrorMessage = e.message || 'RadioReference unavailable';
         return null;
       }
     })();
-    promises.push(rrPromise);
-  } else {
-    promises.push(Promise.resolve(null)); // Placeholder to keep indices aligned if needed, though Promise.all works fine
   }
 
   // Await both
@@ -181,14 +192,13 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
 
   // Master Data will be the merged result
   let masterData: ScanResult | null = null;
-  let masterGrounding: any = null; // AI grounding
-  let rawText = "";
+  let masterGrounding: any = aiGrounding;
 
   // MERGE LOGIC
   if (rrResult && aiResult) {
     console.log(`[Hybrid Merge] Merging RR (${rrResult.agencies?.length} agcy) + AI (${aiResult.agencies?.length} agcy)`);
     masterData = mergeResults(rrResult, aiResult);
-    rawText = "Merged Hybrid Results (RR + AI)";
+    rawText = rawText || 'Merged Hybrid Results (RR + AI)';
   } else if (rrResult) {
     console.log(`[Hybrid Results] RR Only`);
     masterData = rrResult;
@@ -196,16 +206,16 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   } else if (aiResult) {
     console.log(`[Hybrid Results] AI Only`);
     masterData = aiResult;
-    rawText = "AI Results";
+    rawText = rawText || 'AI Results';
   } else {
     console.log(`[Hybrid Search] All fetches failed. Checking Cache as backup...`);
     // Fallback: Check Cache if everything else failed
-    const cached = await getFromCache(cacheKey, rrCredentials);
-    if (cached) {
+    const backupCached = await getFromCache(cacheKey, rrCredentials);
+    if (backupCached) {
       console.log(`[Cache Backup] Found data.`);
       // Filter and return immediately
-      const filteredData = filterDataByServices(cached.data, userSelectedServices);
-      return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: "Retrieved from Cache (Offline Backup)", rrError: rrErrorMessage };
+      const filteredData = filterDataByServices(backupCached.data, userSelectedServices);
+      return { data: filteredData, groundingChunks: backupCached.groundingChunks, rawText: "Retrieved from Cache (Offline Backup)", rrError: rrErrorMessage };
     }
     throw new Error("Unable to retrieve frequency data from any source.");
   }

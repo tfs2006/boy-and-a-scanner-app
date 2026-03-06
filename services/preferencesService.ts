@@ -1,8 +1,10 @@
 import { ServiceType } from '../types';
 import { supabase } from './supabaseClient';
+import { rememberMissingOptionalTable, shouldSkipOptionalTable } from './supabaseOptionalTableGuard';
 
 const LS_KEY = 'prefs_default_service_types';
 const DEFAULT_SERVICES: ServiceType[] = ['Police', 'Fire', 'EMS'];
+const USER_PREFERENCES_TABLE = 'user_preferences';
 
 // ---------------------------------------------------------------------------
 // localStorage helpers
@@ -29,13 +31,15 @@ function writeToLocalStorage(types: ServiceType[]) {
 // ---------------------------------------------------------------------------
 
 async function readFromSupabase(userId: string): Promise<ServiceType[] | null> {
-  if (!supabase) return null;
+  if (!supabase || shouldSkipOptionalTable(USER_PREFERENCES_TABLE)) return null;
   try {
     const { data, error } = await supabase
       .from('user_preferences')
       .select('default_service_types')
       .eq('user_id', userId)
       .single();
+
+    if (rememberMissingOptionalTable(USER_PREFERENCES_TABLE, error)) return null;
     if (error || !data) return null;
     const types = data.default_service_types;
     if (Array.isArray(types) && types.length > 0) return types as ServiceType[];
@@ -44,12 +48,14 @@ async function readFromSupabase(userId: string): Promise<ServiceType[] | null> {
 }
 
 async function writeToSupabase(userId: string, types: ServiceType[]) {
-  if (!supabase) return;
+  if (!supabase || shouldSkipOptionalTable(USER_PREFERENCES_TABLE)) return;
   try {
-    await supabase.from('user_preferences').upsert(
+    const { error } = await supabase.from('user_preferences').upsert(
       { user_id: userId, default_service_types: types, updated_at: new Date().toISOString() },
       { onConflict: 'user_id' }
     );
+
+    rememberMissingOptionalTable(USER_PREFERENCES_TABLE, error);
   } catch {/* ignore — table may not exist yet */}
 }
 

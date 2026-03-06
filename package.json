@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "build:ci": "npm run test:smoke && npm run build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:smoke": "vitest run tests/search.smoke.test.ts tests/trip.smoke.test.tsx tests/explore.smoke.test.tsx tests/optionalTables.smoke.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.40.0",
@@ -23,10 +26,14 @@
     "react-leaflet": "^5.0.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^22.14.0",
     "@vercel/node": "^5.5.31",
     "@vitejs/plugin-react": "^5.0.0",
+    "jsdom": "^28.1.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "^4.0.18"
   }
 }

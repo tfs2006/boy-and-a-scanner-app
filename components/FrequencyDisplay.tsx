@@ -3,7 +3,6 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ScanResult, Agency, TrunkedSystem, FrequencyConfirmationCount } from '../types';
 import { Radio, Shield, Flame, Activity, Hash, Zap, CheckCircle2, AlertTriangle, SearchCheck, Signal, Ear, Loader2, SlidersHorizontal, X, Search, Download } from 'lucide-react';
 import { logConfirmation, getBatchConfirmationCounts } from '../services/crowdsourceService';
-import { generateSmartCSV } from '../utils/csvGenerator';
 
 // ---------------------------------------------------------------------------
 // System-type filter taxonomy
@@ -229,6 +228,10 @@ interface AgencyCardProps {
   isLoggedIn: boolean;
 }
 
+function getFrequencyRowKey(freq: string, agencyName: string): string {
+  return `${agencyName.trim().toLowerCase()}::${freq.trim()}`;
+}
+
 const HeardItButton: React.FC<{
   freq: string;
   agencyName: string;
@@ -353,9 +356,9 @@ const AgencyCard: React.FC<AgencyCardProps> = ({ agency, locationQuery, counts, 
                       freq={freq.freq}
                       agencyName={agency.name}
                       locationQuery={locationQuery}
-                      count={counts.get(freq.freq)?.count ?? 0}
-                      lastHeard={counts.get(freq.freq)?.last_heard ?? null}
-                      confirmed={confirmedSet.has(freq.freq)}
+                      count={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.count ?? 0}
+                      lastHeard={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.last_heard ?? null}
+                      confirmed={confirmedSet.has(getFrequencyRowKey(freq.freq, agency.name))}
                       isLoggedIn={isLoggedIn}
                       onConfirm={onConfirm}
                     />
@@ -390,9 +393,9 @@ const AgencyCard: React.FC<AgencyCardProps> = ({ agency, locationQuery, counts, 
                       freq={freq.freq}
                       agencyName={agency.name}
                       locationQuery={locationQuery}
-                      count={counts.get(freq.freq)?.count ?? 0}
-                      lastHeard={counts.get(freq.freq)?.last_heard ?? null}
-                      confirmed={confirmedSet.has(freq.freq)}
+                      count={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.count ?? 0}
+                      lastHeard={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.last_heard ?? null}
+                      confirmed={confirmedSet.has(getFrequencyRowKey(freq.freq, agency.name))}
                       isLoggedIn={isLoggedIn}
                       onConfirm={onConfirm}
                     />
@@ -718,19 +721,20 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
   // Load batch counts when result changes
   useEffect(() => {
     if (!locationQuery) return;
-    const allFreqs = agencies.flatMap(a => a.frequencies.map(f => f.freq));
-    if (allFreqs.length === 0) return;
-    getBatchConfirmationCounts(allFreqs, locationQuery).then(setCounts);
+    const allRows = agencies.flatMap(a => a.frequencies.map(f => ({ frequency: f.freq, agencyName: a.name })));
+    if (allRows.length === 0) return;
+    getBatchConfirmationCounts(allRows, locationQuery).then(setCounts);
   }, [data, locationQuery]);
 
   const handleConfirm = useCallback(async (freq: string, agencyName: string) => {
     const success = await logConfirmation(freq, locationQuery, agencyName);
     if (success) {
-      setConfirmedSet(prev => new Set(prev).add(freq));
+      const rowKey = getFrequencyRowKey(freq, agencyName);
+      setConfirmedSet(prev => new Set(prev).add(rowKey));
       setCounts(prev => {
         const updated = new Map(prev);
-        const existing = updated.get(freq);
-        updated.set(freq, {
+        const existing = updated.get(rowKey);
+        updated.set(rowKey, {
           frequency: freq,
           location_query: locationQuery,
           count: (existing?.count ?? 0) + 1,
@@ -740,6 +744,11 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
       });
     }
   }, [locationQuery]);
+
+  const handleSmartExport = useCallback(async (minConfirmations: number) => {
+    const { generateSmartCSV } = await import('../utils/csvGenerator');
+    generateSmartCSV(data, counts, minConfirmations);
+  }, [data, counts]);
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -795,7 +804,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
                   <button
                     key={n}
                     type="button"
-                    onClick={() => generateSmartCSV(data, counts, n)}
+                    onClick={() => { void handleSmartExport(n); }}
                     title={`Export only frequencies heard ${n}+ time${n !== 1 ? 's' : ''} by the community`}
                     className="flex items-center gap-0.5 px-1.5 py-1 rounded bg-emerald-900/40 border border-emerald-600/40 text-emerald-400 hover:bg-emerald-800/60 hover:text-white transition-colors text-[10px] font-bold font-mono-tech"
                   >

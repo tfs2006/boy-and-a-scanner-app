@@ -1,35 +1,41 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
 import { SearchResponse, ScanResult, ServiceType } from './types';
 import { FrequencyDisplay } from './components/FrequencyDisplay';
-import { TripPlanner } from './components/TripPlanner';
-import { ProgrammingManual } from './components/ProgrammingManual';
 import { Auth } from './components/Auth';
 import { isValidLocationInput } from './utils/security';
 import { supabase } from './services/supabaseClient';
 import { Session } from '@supabase/supabase-js';
-import { generateCSV } from './utils/csvGenerator';
 import { generateSentinelExport } from './utils/exportUtils';
-import { exportSentinelZip } from './utils/sentinelExporter';
-import { exportChirpCSV } from './utils/chirpExporter';
 import { getFavorites, addFavorite, removeFavorite, Favorite } from './services/favoritesService';
 import { loadServicePreferences, saveServicePreferences, getLocalServicePreferences } from './services/preferencesService';
 import { getNotifications, getUnreadCount, markAllRead, AppNotification } from './services/notificationsService';
 import { SearchSuggestions, saveSearchToHistory } from './components/SearchSuggestions';
-import { MapDisplay } from './components/MapDisplay';
-import { ComparisonView } from './components/ComparisonView';
 import { SearchForm } from './components/SearchForm';
-import { Leaderboard } from './components/Leaderboard';
-import { ContributeModal } from './components/ContributeModal';
-import { ExploreMap } from './components/ExploreMap';
-import { ProfileModal } from './components/ProfileModal';
+
+const TripPlanner = lazy(async () => ({ default: (await import('./components/TripPlanner')).TripPlanner }));
+const ProgrammingManual = lazy(async () => ({ default: (await import('./components/ProgrammingManual')).ProgrammingManual }));
+const MapDisplay = lazy(async () => ({ default: (await import('./components/MapDisplay')).MapDisplay }));
+const ComparisonView = lazy(async () => ({ default: (await import('./components/ComparisonView')).ComparisonView }));
+const Leaderboard = lazy(async () => ({ default: (await import('./components/Leaderboard')).Leaderboard }));
+const ContributeModal = lazy(async () => ({ default: (await import('./components/ContributeModal')).ContributeModal }));
+const ExploreMap = lazy(async () => ({ default: (await import('./components/ExploreMap')).ExploreMap }));
+const ProfileModal = lazy(async () => ({ default: (await import('./components/ProfileModal')).ProfileModal }));
+
+const SectionLoader = ({ label = 'Loading module...' }: { label?: string }) => (
+  <div className="flex items-center justify-center py-16 text-slate-400 font-mono-tech text-sm gap-3">
+    <Loader2 className="w-5 h-5 animate-spin text-cyan-400" />
+    {label}
+  </div>
+);
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const sessionUserId = session?.user.id ?? null;
 
   const [mode, setMode] = useState<'scan' | 'trip' | 'leaderboard' | 'explore'>('scan');
 
@@ -66,6 +72,8 @@ function App() {
   // Comparison State
   const [pinnedResult, setPinnedResult] = useState<ScanResult | null>(null);
   const [showComparison, setShowComparison] = useState(false);
+  const activeSearchControllerRef = useRef<AbortController | null>(null);
+  const activeSearchRequestIdRef = useRef(0);
 
   // Theme State
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
@@ -122,20 +130,37 @@ function App() {
 
   // RadioReference Direct API Credentials
   const [showRRSettings, setShowRRSettings] = useState(false);
-  const [rrUsername, setRrUsername] = useState(() => localStorage.getItem('rr_username') || '');
-  const [rrPassword, setRrPassword] = useState(() => localStorage.getItem('rr_password') || '');
+  const [rrUsername, setRrUsername] = useState(() => sessionStorage.getItem('rr_username') || localStorage.getItem('rr_username') || '');
+  const [rrPassword, setRrPassword] = useState(() => sessionStorage.getItem('rr_password') || localStorage.getItem('rr_password') || '');
   const [showRRPassword, setShowRRPassword] = useState(false);
   const rrCredentials: RRCredentials | undefined = (rrUsername && rrPassword) ? { username: rrUsername, password: rrPassword } : undefined;
 
+  useEffect(() => {
+    const legacyUsername = localStorage.getItem('rr_username');
+    const legacyPassword = localStorage.getItem('rr_password');
+    if (legacyUsername) {
+      sessionStorage.setItem('rr_username', legacyUsername);
+      localStorage.removeItem('rr_username');
+    }
+    if (legacyPassword) {
+      sessionStorage.setItem('rr_password', legacyPassword);
+      localStorage.removeItem('rr_password');
+    }
+  }, []);
+
   const saveRRCredentials = () => {
-    localStorage.setItem('rr_username', rrUsername);
-    localStorage.setItem('rr_password', rrPassword);
+    sessionStorage.setItem('rr_username', rrUsername);
+    sessionStorage.setItem('rr_password', rrPassword);
+    localStorage.removeItem('rr_username');
+    localStorage.removeItem('rr_password');
     setShowRRSettings(false);
   };
 
   const clearRRCredentials = () => {
     setRrUsername('');
     setRrPassword('');
+    sessionStorage.removeItem('rr_username');
+    sessionStorage.removeItem('rr_password');
     localStorage.removeItem('rr_username');
     localStorage.removeItem('rr_password');
   };
@@ -147,7 +172,10 @@ function App() {
       return;
     }
 
+    let cancelled = false;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
       setSession(session);
       setAuthLoading(false);
     });
@@ -155,46 +183,67 @@ function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (cancelled) return;
       setSession(session);
+      setAuthLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   // Handle Connection Check (Only if logged in)
   useEffect(() => {
-    if (session) {
-      checkConnection();
-      loadFavorites();
-      // Reload service type preferences from Supabase (may override localStorage)
-      loadServicePreferences(session.user.id).then(prefs => setServiceTypes(prefs));
-      // Load notifications on session start
-      loadNotifications(session.user.id);
+    if (!sessionUserId) {
+      setFavorites([]);
+      setNotifications([]);
+      setUnreadCount(0);
+      setShowNotifPanel(false);
+      return;
     }
-  }, [session]);
+
+    let cancelled = false;
+
+    const bootstrapUserState = async () => {
+      checkConnection();
+      const [favs, prefs, unread] = await Promise.all([
+        getFavorites(),
+        loadServicePreferences(sessionUserId),
+        getUnreadCount(sessionUserId),
+      ]);
+
+      if (cancelled) return;
+      setFavorites(favs);
+      setServiceTypes(prefs);
+      setUnreadCount(unread);
+    };
+
+    void bootstrapUserState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionUserId]);
 
   // Poll unread notification count every 60 seconds when logged in
   useEffect(() => {
-    if (!session) return;
+    if (!sessionUserId) return;
     const interval = setInterval(() => {
-      getUnreadCount(session.user.id).then(setUnreadCount);
+      getUnreadCount(sessionUserId).then(setUnreadCount);
     }, 60_000);
     return () => clearInterval(interval);
-  }, [session]);
-
-  const loadNotifications = async (userId: string) => {
-    const [notifs, count] = await Promise.all([getNotifications(userId), getUnreadCount(userId)]);
-    setNotifications(notifs);
-    setUnreadCount(count);
-  };
+  }, [sessionUserId]);
 
   const handleOpenNotifPanel = async () => {
-    setShowNotifPanel(v => !v);
-    if (!showNotifPanel && session) {
+    const nextOpen = !showNotifPanel;
+    setShowNotifPanel(nextOpen);
+    if (nextOpen && sessionUserId) {
       // Fetch fresh notifications and mark all read
-      const notifs = await getNotifications(session.user.id);
+      const notifs = await getNotifications(sessionUserId);
       setNotifications(notifs);
-      await markAllRead(session.user.id);
+      await markAllRead(sessionUserId);
       setUnreadCount(0);
     }
   };
@@ -207,11 +256,6 @@ function App() {
       setIsSaved(false);
     }
   }, [searchQuery, favorites]);
-
-  const loadFavorites = async () => {
-    const favs = await getFavorites();
-    setFavorites(favs);
-  };
 
   const toggleFavorite = async () => {
     const query = searchQuery.trim();
@@ -235,18 +279,44 @@ function App() {
     // Directly trigger search without fragile DOM manipulation
     if (!isValidLocationInput(query)) return;
     if (serviceTypes.length === 0) return;
+    runSearch(query);
+  };
+
+  const beginSearchRequest = () => {
+    activeSearchControllerRef.current?.abort();
+    const controller = new AbortController();
+    activeSearchControllerRef.current = controller;
+    activeSearchRequestIdRef.current += 1;
+    return { controller, requestId: activeSearchRequestIdRef.current };
+  };
+
+  const isActiveSearch = (requestId: number, signal?: AbortSignal) => {
+    return !signal?.aborted && activeSearchRequestIdRef.current === requestId;
+  };
+
+  const finishSearch = (requestId: number, startTime: number, signal?: AbortSignal) => {
+    if (!isActiveSearch(requestId, signal)) return;
+    const endTime = performance.now();
+    setSearchTime((endTime - startTime) / 1000);
+    setLoading(false);
+    setSearchStep('');
+  };
+
+  const runSearch = (query: string) => {
+    const { controller, requestId } = beginSearchRequest();
     setLoading(true);
+    setError(null);
+    setResult(null);
     setGrounding(null);
     setSearchTime(0);
     setSearchStep('Initializing Scanner Protocol...');
     const startTime = performance.now();
-    performAiSearch(query).catch(err => {
+
+    performAiSearch(query, controller.signal, requestId).catch(err => {
+      if (err?.name === 'AbortError' || !isActiveSearch(requestId, controller.signal)) return;
       setError("Search failed. " + (err.message || 'Please try again.'));
     }).finally(() => {
-      const endTime = performance.now();
-      setSearchTime((endTime - startTime) / 1000);
-      setLoading(false);
-      setSearchStep('');
+      finishSearch(requestId, startTime, controller.signal);
     });
   };
 
@@ -263,7 +333,7 @@ function App() {
 
     try {
       // 1. Connection Test
-      const { error } = await supabase.from('search_cache').select('id').limit(1);
+      const { error } = await supabase.from('search_cache').select('search_key').limit(1);
 
       if (error) {
         console.error("Supabase Connection Error:", error);
@@ -331,6 +401,8 @@ function App() {
       return;
     }
 
+    const { controller, requestId } = beginSearchRequest();
+
     setLoading(true);
     setError(null);
     setResult(null);
@@ -342,24 +414,21 @@ function App() {
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        if (!isActiveSearch(requestId, controller.signal)) return;
         const { latitude, longitude } = position.coords;
         const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
         setSearchQuery(coordString);
         try {
-          await performAiSearch(coordString);
+          await performAiSearch(coordString, controller.signal, requestId);
         } catch (err: any) {
-          // If user cancelled manually, we might want to ignore this, but usually performAiSearch handles it.
-          // However, if we cleared loading state on cancel, this might set it back?
-          // We'll check if loading is still true before setting error.
+          if (err?.name === 'AbortError' || !isActiveSearch(requestId, controller.signal)) return;
           setError("Search failed. " + (err.message || 'Please try again.'));
         } finally {
-          const endTime = performance.now();
-          setSearchTime((endTime - startTime) / 1000);
-          setLoading(false);
-          setSearchStep('');
+          finishSearch(requestId, startTime, controller.signal);
         }
       },
       (err) => {
+        if (!isActiveSearch(requestId, controller.signal)) return;
         setLoading(false);
         setSearchStep('');
         if (err.code === err.PERMISSION_DENIED) {
@@ -373,18 +442,14 @@ function App() {
       },
       { timeout: 10000, enableHighAccuracy: true }
     );
-
-    // Store geoId if we want to cancel? 
-    // React state for cancelling requires extensive Refactoring. 
-    // Ideally we just provide a 'Cancel' button that sets loading=false and ignores the result.
   };
 
   const handleCancel = () => {
+    activeSearchControllerRef.current?.abort();
+    activeSearchRequestIdRef.current += 1;
     setLoading(false);
     setSearchStep('');
     setError(null);
-    // Note: We can't easily cancel the in-flight fetch or geolocation without AbortController, 
-    // but we can reset the UI state so the user isn't stuck.
   };
 
   const handleSentinelCopy = (data: ScanResult) => {
@@ -401,10 +466,20 @@ function App() {
     });
   };
 
+  const handleCsvExport = async (data: ScanResult) => {
+    const { generateCSV } = await import('./utils/csvGenerator');
+    generateCSV(data);
+  };
+
+  const handleChirpExport = async (data: ScanResult) => {
+    const { exportChirpCSV } = await import('./utils/chirpExporter');
+    exportChirpCSV(data);
+  };
+
   // handleSearch removed - logic moved to SearchForm onSearch prop
 
 
-  const performAiSearch = async (query: string) => {
+  const performAiSearch = async (query: string, signal?: AbortSignal, requestId?: number) => {
     setError(null);
     setRrWarning(null);
     const isZip = /^\d{5}$/.test(query.trim());
@@ -414,7 +489,10 @@ function App() {
       setSearchStep(`Analyzing Location & Scanning for: ${serviceTypes.slice(0, 3).join(', ')}...`);
     }
     try {
-      const response = await searchFrequencies(query, serviceTypes, rrCredentials);
+      const response = await searchFrequencies(query, serviceTypes, rrCredentials, signal);
+      if ((requestId !== undefined && !isActiveSearch(requestId, signal)) || signal?.aborted) {
+        return;
+      }
       if (response.rrError) {
         // RR failed but we may still have AI data — show a targeted warning
         const msg = response.rrError;
@@ -442,6 +520,9 @@ function App() {
         }
       }
     } catch (e: any) {
+      if (e?.name === 'AbortError') {
+        throw e;
+      }
       const msg = e.message || "AI Search failed.";
       if (msg.includes("Unable to retrieve")) {
         if (!isZip && !query.includes(',')) {
@@ -753,7 +834,10 @@ function App() {
             </div>
 
             <p className="text-sm text-slate-400 mb-4 leading-relaxed">
-              Connect your <strong className="text-white">RadioReference Premium</strong> account to pull <em>verified</em> frequency data directly from the RR database instead of relying on AI search. Your credentials are stored locally in your browser only.
+              Connect your <strong className="text-white">RadioReference Premium</strong> account to pull <em>verified</em> frequency data directly from the RR database instead of relying on AI search.
+            </p>
+            <p className="text-xs text-slate-500 -mt-2">
+              Credentials are kept for this browser session only and cleared when you close the tab.
             </p>
 
             <div className="space-y-4">
@@ -820,11 +904,17 @@ function App() {
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 selection:bg-amber-500/30">
 
         {mode === 'leaderboard' ? (
-          <Leaderboard currentUserId={session?.user?.id} />
+          <Suspense fallback={<SectionLoader label="Loading leaderboard..." />}>
+            <Leaderboard currentUserId={session?.user?.id} />
+          </Suspense>
         ) : mode === 'trip' ? (
-          <TripPlanner />
+          <Suspense fallback={<SectionLoader label="Loading trip planner..." />}>
+            <TripPlanner />
+          </Suspense>
         ) : mode === 'explore' ? (
-          <ExploreMap isLoggedIn={!!session} />
+          <Suspense fallback={<SectionLoader label="Loading cache explorer..." />}>
+            <ExploreMap isLoggedIn={!!session} />
+          </Suspense>
         ) : (
           <>
             {/* Search Hero */}
@@ -915,23 +1005,7 @@ function App() {
                     setError("Please select at least one service type to scan.");
                     return;
                   }
-                  setLoading(true);
-                  setError(null);
-                  setResult(null);
-                  setGrounding(null);
-                  setSearchTime(0);
-                  setSearchStep('Initializing Scanner Protocol...');
-                  const startTime = performance.now();
-
-                  // Trigger async search
-                  performAiSearch(query).catch(err => {
-                    setError("Search failed. " + (err.message || 'Please try again.'));
-                  }).finally(() => {
-                    const endTime = performance.now();
-                    setSearchTime((endTime - startTime) / 1000);
-                    setLoading(false);
-                    setSearchStep('');
-                  });
+                  runSearch(query);
                 }}
                 loading={loading}
                 initialQuery={searchQuery}
@@ -1082,7 +1156,9 @@ function App() {
               result && (
                 <div className="space-y-8 animate-fade-in">
                   {result.coords && (
-                    <MapDisplay coords={result.coords} locationName={result.locationName} />
+                    <Suspense fallback={<SectionLoader label="Loading map..." />}>
+                      <MapDisplay coords={result.coords} locationName={result.locationName} />
+                    </Suspense>
                   )}
 
                   <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mb-6">
@@ -1138,14 +1214,14 @@ function App() {
                         <span className="text-sm font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Copy for </span>Sentinel</span>
                       </button>
                       <button
-                        onClick={() => generateCSV(result)}
+                        onClick={() => handleCsvExport(result)}
                         className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-emerald-900/40 border-emerald-500/60 text-emerald-400 hover:bg-emerald-900/60 hover:text-white transition-all shadow-lg shadow-emerald-900/20 hover:scale-105"
                       >
                         <FileDown className="w-5 h-5" />
                         <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">CSV</span>
                       </button>
                       <button
-                        onClick={() => exportChirpCSV(result)}
+                        onClick={() => handleChirpExport(result)}
                         className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-violet-900/40 border-violet-500/60 text-violet-400 hover:bg-violet-900/60 hover:text-white transition-all shadow-lg shadow-violet-900/20 hover:scale-105"
                         title="Export CHIRP-format CSV for programming handhelds"
                       >
@@ -1237,34 +1313,42 @@ function App() {
 
             {
               showManual && result && (
-                <ProgrammingManual
-                  data={result}
-                  onClose={() => setShowManual(false)}
-                />
+                <Suspense fallback={<SectionLoader label="Loading manual..." />}>
+                  <ProgrammingManual
+                    data={result}
+                    onClose={() => setShowManual(false)}
+                  />
+                </Suspense>
               )
             }
 
             {
               showContribute && (
-                <ContributeModal
-                  locationQuery={searchQuery}
-                  onClose={() => setShowContribute(false)}
-                />
+                <Suspense fallback={<SectionLoader label="Loading form..." />}>
+                  <ContributeModal
+                    locationQuery={searchQuery}
+                    onClose={() => setShowContribute(false)}
+                  />
+                </Suspense>
               )
             }
 
             {
               showComparison && pinnedResult && result && (
-                <ComparisonView
-                  left={pinnedResult}
-                  right={result}
-                  onClose={() => setShowComparison(false)}
-                />
+                <Suspense fallback={<SectionLoader label="Loading comparison..." />}>
+                  <ComparisonView
+                    left={pinnedResult}
+                    right={result}
+                    onClose={() => setShowComparison(false)}
+                  />
+                </Suspense>
               )
             }
 
             {showProfile && session && (
-              <ProfileModal session={session} onClose={() => setShowProfile(false)} />
+              <Suspense fallback={<SectionLoader label="Loading profile..." />}>
+                <ProfileModal session={session} onClose={() => setShowProfile(false)} />
+              </Suspense>
             )}
           </>
         )

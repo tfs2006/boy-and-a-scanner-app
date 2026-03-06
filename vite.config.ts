@@ -8,6 +8,11 @@ export default defineConfig({
       host: '0.0.0.0',
     },
     plugins: [react()],
+    test: {
+      environment: 'jsdom',
+      globals: true,
+      setupFiles: './tests/setupTests.ts',
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

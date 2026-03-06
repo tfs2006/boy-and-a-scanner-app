@@ -16,9 +16,11 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Profiles are viewable by everyone" ON public.profiles;
 CREATE POLICY "Profiles are viewable by everyone"
   ON public.profiles FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
 CREATE POLICY "Users can update their own profile"
   ON public.profiles FOR UPDATE USING (auth.uid() = user_id);
 
@@ -63,13 +65,16 @@ CREATE INDEX IF NOT EXISTS idx_reports_created       ON public.frequency_reports
 
 ALTER TABLE public.frequency_reports ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Reports are viewable by everyone" ON public.frequency_reports;
 CREATE POLICY "Reports are viewable by everyone"
   ON public.frequency_reports FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can insert reports" ON public.frequency_reports;
 CREATE POLICY "Authenticated users can insert reports"
   ON public.frequency_reports FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own reports" ON public.frequency_reports;
 CREATE POLICY "Users can delete their own reports"
   ON public.frequency_reports FOR DELETE USING (auth.uid() = user_id);
 
@@ -91,12 +96,15 @@ CREATE INDEX IF NOT EXISTS idx_stats_points ON public.user_stats (total_points D
 
 ALTER TABLE public.user_stats ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Stats are viewable by everyone" ON public.user_stats;
 CREATE POLICY "Stats are viewable by everyone"
   ON public.user_stats FOR SELECT USING (true);
 
+DROP POLICY IF EXISTS "Users can insert their own stats" ON public.user_stats;
 CREATE POLICY "Users can insert their own stats"
   ON public.user_stats FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own stats" ON public.user_stats;
 CREATE POLICY "Users can update their own stats"
   ON public.user_stats FOR UPDATE USING (auth.uid() = user_id);
 
@@ -129,12 +137,15 @@ CREATE TABLE IF NOT EXISTS public.user_preferences (
 
 ALTER TABLE public.user_preferences ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read their own preferences" ON public.user_preferences;
 CREATE POLICY "Users can read their own preferences"
   ON public.user_preferences FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert their own preferences" ON public.user_preferences;
 CREATE POLICY "Users can insert their own preferences"
   ON public.user_preferences FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own preferences" ON public.user_preferences;
 CREATE POLICY "Users can update their own preferences"
   ON public.user_preferences FOR UPDATE USING (auth.uid() = user_id);
 
@@ -152,12 +163,15 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read their own notifications" ON public.notifications;
 CREATE POLICY "Users can read their own notifications"
   ON public.notifications FOR SELECT USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert their own notifications" ON public.notifications;
 CREATE POLICY "Users can insert their own notifications"
   ON public.notifications FOR INSERT WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own notifications" ON public.notifications;
 CREATE POLICY "Users can update their own notifications"
   ON public.notifications FOR UPDATE USING (auth.uid() = user_id);
 

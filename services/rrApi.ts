@@ -20,11 +20,13 @@ export interface RRCredentials {
 export const fetchFromRadioReference = async (
   zipcode: string,
   credentials: RRCredentials,
-  serviceTypes: string[] = ['Police', 'Fire', 'EMS']
+  serviceTypes: string[] = ['Police', 'Fire', 'EMS'],
+  signal?: AbortSignal
 ): Promise<ScanResult> => {
   const response = await fetch('/api/rrdb', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal,
     body: JSON.stringify({
       zipcode,
       rrUsername: credentials.username,

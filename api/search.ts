@@ -80,12 +80,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   `;
 
     let response;
-    let usedTools = true;
 
     // Optimization: If location is strictly "City, State", skip Google Search tool to save time (5s vs 15s)
     // We trust that Gemini internal knowledge is sufficient for major cities.
     const isStructuredLocation = /^[a-zA-Z\s.-]+,\s*[a-zA-Z]{2}$/.test(safeLocation);
     const useTools = !isStructuredLocation;
+    let usedTools = useTools;
 
     if (!useTools) {
       console.log(`[Optimization] Skipping Google Search tool for structured location: "${safeLocation}"`);
@@ -112,9 +112,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         throw err;
       }
     }
-
-    // Update usedTools flag based on logic
-    usedTools = useTools;
 
     const text = response?.text || "{}";
     let data: any = null;
@@ -144,6 +141,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!Array.isArray(s.talkgroups)) s.talkgroups = [];
         if (!Array.isArray(s.frequencies)) s.frequencies = [];
       });
+    }
+
+    if (!data || (!data.locationName && data.agencies.length === 0 && data.trunkedSystems.length === 0)) {
+      console.error('Search API returned unparsable or empty AI payload:', text);
+      return res.status(502).json({ error: 'AI returned malformed frequency data.' });
     }
 
     const groundingChunks = usedTools ? (response?.candidates?.[0]?.groundingMetadata?.groundingChunks || []) : [];

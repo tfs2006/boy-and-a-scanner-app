@@ -1,14 +1,12 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { TripResult, ServiceType, ScanResult } from '../types';
 import { planTrip, filterTripByServices } from '../services/geminiService';
-import { generateTripPDF } from '../utils/pdfGenerator';
-import { generateCSV } from '../utils/csvGenerator';
-import { exportTripSentinelZip } from '../utils/sentinelExporter';
 import { isValidLocationInput } from '../utils/security';
-import { Map, MapPin, Navigation, FileDown, Loader2, CheckSquare, Square, AlertTriangle, Zap, Bot, Timer, BookOpen, FileText, ArrowLeftRight, History, X, CheckCheck, LinkIcon } from 'lucide-react';
+import { Map as MapIcon, MapPin, Navigation, FileDown, Loader2, CheckSquare, Square, AlertTriangle, Zap, Bot, Timer, BookOpen, FileText, ArrowLeftRight, History, X, CheckCheck, LinkIcon } from 'lucide-react';
 import { FrequencyDisplay } from './FrequencyDisplay';
-import { ProgrammingManual } from './ProgrammingManual';
+
+const ProgrammingManual = lazy(async () => ({ default: (await import('./ProgrammingManual')).ProgrammingManual }));
 
 const TRIP_HISTORY_KEY = 'trip_history';
 const LOAD_STEPS = [
@@ -51,6 +49,21 @@ export const TripPlanner: React.FC = () => {
 
     // State for the manual modal in Trip View
     const [selectedManualData, setSelectedManualData] = useState<ScanResult | null>(null);
+
+    const handleTripCsvExport = async (data: TripResult) => {
+        const { generateCSV } = await import('../utils/csvGenerator');
+        generateCSV(data);
+    };
+
+    const handleTripZipExport = async (data: TripResult) => {
+        const { exportTripSentinelZip } = await import('../utils/sentinelExporter');
+        await exportTripSentinelZip(data);
+    };
+
+    const handleTripPdfExport = async (data: TripResult) => {
+        const { generateTripPDF } = await import('../utils/pdfGenerator');
+        generateTripPDF(data);
+    };
 
     // Load trip history on mount
     useEffect(() => {
@@ -212,12 +225,12 @@ export const TripPlanner: React.FC = () => {
     const locations = trip?.locations || [];
 
     // Cross-border coverage hints: find agencies/systems appearing in 2+ zones
-    const crossBorderHints = useMemo<Map<number, string[]>>(() => {
-        if (!trip || locations.length < 2) return new Map();
+    const crossBorderHints = useMemo<globalThis.Map<number, string[]>>(() => {
+        if (!trip || locations.length < 2) return new globalThis.Map();
         // Normalize a name for comparison
         const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
         // Build a map: normalizedName → set of zone indices where it appears
-        const nameToZones = new Map<string, Set<number>>();
+        const nameToZones = new globalThis.Map<string, Set<number>>();
         locations.forEach((loc, idx) => {
             const names = [
                 ...loc.data.agencies.map(a => norm(a.name)),
@@ -230,7 +243,7 @@ export const TripPlanner: React.FC = () => {
             }
         });
         // Collect hints per zone: list shared system names when appearing in multiple zones
-        const result = new Map<number, string[]>();
+        const result = new globalThis.Map<number, string[]>();
         nameToZones.forEach((zones, normName) => {
             if (zones.size < 2) return;
             // Find the display name (search agencies first, then trunked)
@@ -255,7 +268,7 @@ export const TripPlanner: React.FC = () => {
             {/* Input Section */}
             <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 mb-8 backdrop-blur-sm">
                 <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2 font-mono-tech">
-                    <Map className="w-5 h-5 text-amber-500" />
+                    <MapIcon className="w-5 h-5 text-amber-500" />
                     ROUTE CONFIGURATION
                 </h2>
 
@@ -417,21 +430,21 @@ export const TripPlanner: React.FC = () => {
                         </div>
                         <div className="flex gap-2 flex-wrap">
                             <button
-                                onClick={() => generateCSV(trip)}
+                                onClick={() => { void handleTripCsvExport(trip); }}
                                 className="bg-emerald-900/30 hover:bg-emerald-800/50 border border-emerald-500/30 text-emerald-400 px-4 py-2 rounded flex items-center gap-2 font-mono-tech text-sm transition-colors shadow-lg"
                             >
                                 <FileText className="w-4 h-4" />
                                 EXPORT CSV
                             </button>
                             <button
-                                onClick={() => exportTripSentinelZip(trip)}
+                                onClick={() => { void handleTripZipExport(trip); }}
                                 className="bg-amber-900/30 hover:bg-amber-800/50 border border-amber-500/30 text-amber-400 px-4 py-2 rounded flex items-center gap-2 font-mono-tech text-sm transition-colors shadow-lg"
                             >
                                 <Zap className="w-4 h-4" />
                                 SDS100 EXPORT
                             </button>
                             <button
-                                onClick={() => generateTripPDF(trip)}
+                                onClick={() => { void handleTripPdfExport(trip); }}
                                 className="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded flex items-center gap-2 font-mono-tech text-sm transition-colors shadow-lg shadow-cyan-900/20"
                             >
                                 <FileDown className="w-4 h-4" />
@@ -494,19 +507,19 @@ export const TripPlanner: React.FC = () => {
                         <p className="text-sm text-slate-400 font-mono-tech">Export complete manifest</p>
                         <div className="flex gap-2 flex-wrap">
                             <button
-                                onClick={() => generateCSV(trip!)}
+                                onClick={() => { void handleTripCsvExport(trip!); }}
                                 className="bg-emerald-900/30 hover:bg-emerald-800/50 border border-emerald-500/30 text-emerald-400 px-4 py-2 rounded flex items-center gap-2 font-mono-tech text-sm transition-colors"
                             >
                                 <FileText className="w-4 h-4" /> CSV
                             </button>
                             <button
-                                onClick={() => exportTripSentinelZip(trip!)}
+                                onClick={() => { void handleTripZipExport(trip!); }}
                                 className="bg-amber-900/30 hover:bg-amber-800/50 border border-amber-500/30 text-amber-400 px-4 py-2 rounded flex items-center gap-2 font-mono-tech text-sm transition-colors"
                             >
                                 <Zap className="w-4 h-4" /> SDS100
                             </button>
                             <button
-                                onClick={() => generateTripPDF(trip!)}
+                                onClick={() => { void handleTripPdfExport(trip!); }}
                                 className="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded flex items-center gap-2 font-mono-tech text-sm transition-colors"
                             >
                                 <FileDown className="w-4 h-4" /> PDF
@@ -518,10 +531,12 @@ export const TripPlanner: React.FC = () => {
 
             {/* Render Manual Modal if selected */}
             {selectedManualData && (
-                <ProgrammingManual
-                    data={selectedManualData}
-                    onClose={() => setSelectedManualData(null)}
-                />
+                <Suspense fallback={<div className="flex items-center justify-center py-8 text-slate-400 font-mono-tech text-sm gap-3"><Loader2 className="w-5 h-5 animate-spin text-cyan-400" />Loading manual...</div>}>
+                    <ProgrammingManual
+                        data={selectedManualData}
+                        onClose={() => setSelectedManualData(null)}
+                    />
+                </Suspense>
             )}
         </div>
     );

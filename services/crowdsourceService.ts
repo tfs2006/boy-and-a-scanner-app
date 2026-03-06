@@ -66,15 +66,20 @@ export async function logConfirmation(
 
   // Prevent duplicate confirmations within a 1-hour window
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const { data: existing } = await supabase
+  let existingQuery = supabase
     .from('frequency_reports')
     .select('id')
     .eq('user_id', user.id)
     .eq('frequency', frequency.trim())
     .eq('location_query', locationQuery.trim())
     .eq('report_type', 'confirmation')
-    .gte('created_at', oneHourAgo)
-    .maybeSingle();
+    .gte('created_at', oneHourAgo);
+
+  existingQuery = agencyName?.trim()
+    ? existingQuery.eq('agency_name', agencyName.trim())
+    : existingQuery.is('agency_name', null);
+
+  const { data: existing } = await existingQuery.maybeSingle();
 
   if (existing) return false; // Already confirmed recently
 
@@ -174,18 +179,21 @@ export async function getConfirmationCount(
 // Batch-fetch confirmation counts for the full set of frequencies on a result
 // ---------------------------------------------------------------------------
 export async function getBatchConfirmationCounts(
-  frequencies: string[],
+  rows: Array<{ frequency: string; agencyName?: string }>,
   locationQuery: string
 ): Promise<Map<string, FrequencyConfirmationCount>> {
   const map = new Map<string, FrequencyConfirmationCount>();
-  if (!supabase || frequencies.length === 0) return map;
+  if (!supabase || rows.length === 0) return map;
+
+  const rowKeys = new Set(rows.map((row) => `${(row.agencyName || '').trim().toLowerCase()}::${row.frequency.trim()}`));
+  const uniqueFrequencies = [...new Set(rows.map((row) => row.frequency.trim()))];
 
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const { data, error } = await supabase
     .from('frequency_reports')
-    .select('frequency, created_at')
-    .in('frequency', frequencies)
+    .select('frequency, agency_name, created_at')
+    .in('frequency', uniqueFrequencies)
     .eq('location_query', locationQuery.trim())
     .eq('report_type', 'confirmation')
     .gte('created_at', cutoff)
@@ -193,14 +201,15 @@ export async function getBatchConfirmationCounts(
 
   if (error || !data) return map;
 
-  // Group by frequency
-  for (const freq of frequencies) {
-    const rows = data.filter((r) => r.frequency === freq);
-    map.set(freq, {
-      frequency: freq,
+  for (const row of rows) {
+    const key = `${(row.agencyName || '').trim().toLowerCase()}::${row.frequency.trim()}`;
+    if (!rowKeys.has(key)) continue;
+    const matching = data.filter((record) => record.frequency === row.frequency.trim() && (record.agency_name || '') === (row.agencyName || ''));
+    map.set(key, {
+      frequency: row.frequency,
       location_query: locationQuery,
-      count: rows.length,
-      last_heard: rows[0]?.created_at ?? null,
+      count: matching.length,
+      last_heard: matching[0]?.created_at ?? null,
     });
   }
 
