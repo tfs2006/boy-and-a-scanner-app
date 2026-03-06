@@ -56,13 +56,13 @@ export async function logConfirmation(
   frequency: string,
   locationQuery: string,
   agencyName?: string
-): Promise<boolean> {
-  if (!supabase) return false;
+): Promise<'confirmed' | 'duplicate' | 'error'> {
+  if (!supabase) return 'error';
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return false;
+  if (!user) return 'error';
 
   // Prevent duplicate confirmations within a 1-hour window
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -81,7 +81,7 @@ export async function logConfirmation(
 
   const { data: existing } = await existingQuery.maybeSingle();
 
-  if (existing) return false; // Already confirmed recently
+  if (existing) return 'duplicate'; // Already confirmed recently
 
   const { error } = await supabase.from('frequency_reports').insert({
     user_id: user.id,
@@ -93,12 +93,12 @@ export async function logConfirmation(
 
   if (error) {
     console.error('Error logging confirmation:', error.message);
-    return false;
+    return 'error';
   }
 
   // Update user stats (upsert)
   await incrementUserStat(user.id, 'confirmations_count', POINTS.CONFIRMATION);
-  return true;
+  return 'confirmed';
 }
 
 // ---------------------------------------------------------------------------

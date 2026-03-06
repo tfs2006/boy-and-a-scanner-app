@@ -144,6 +144,10 @@ export const TripPlanner: React.FC = () => {
             setError("Please enter both start and end locations.");
             return;
         }
+        if (start.trim().toLowerCase() === end.trim().toLowerCase()) {
+            setError("Start and end locations must be different.");
+            return;
+        }
         if (serviceTypes.length === 0) {
             setError("Please select at least one service type.");
             return;

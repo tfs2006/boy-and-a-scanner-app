@@ -247,8 +247,11 @@ const HeardItButton: React.FC<{
   const handleClick = async () => {
     if (confirmed || loading || !isLoggedIn) return;
     setLoading(true);
-    await onConfirm(freq, agencyName);
-    setLoading(false);
+    try {
+      await onConfirm(freq, agencyName);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatLastHeard = (ts: string | null) => {
@@ -723,16 +726,18 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
     if (!locationQuery) return;
     const allRows = agencies.flatMap(a => a.frequencies.map(f => ({ frequency: f.freq, agencyName: a.name })));
     if (allRows.length === 0) return;
-    getBatchConfirmationCounts(allRows, locationQuery).then(setCounts);
+    getBatchConfirmationCounts(allRows, locationQuery)
+      .then(setCounts)
+      .catch(err => console.warn('Failed to load confirmation counts:', err));
   }, [data, locationQuery]);
 
   const handleConfirm = useCallback(async (freq: string, agencyName: string) => {
-    const success = await logConfirmation(freq, locationQuery, agencyName);
-    if (success) {
-      const rowKey = getFrequencyRowKey(freq, agencyName);
+    const result = await logConfirmation(freq, locationQuery, agencyName);
+    const rowKey = getFrequencyRowKey(freq, agencyName);
+    if (result === 'confirmed') {
       setConfirmedSet(prev => new Set(prev).add(rowKey));
       setCounts(prev => {
-        const updated = new Map(prev);
+        const updated = new Map<string, FrequencyConfirmationCount>(prev);
         const existing = updated.get(rowKey);
         updated.set(rowKey, {
           frequency: freq,
@@ -742,6 +747,9 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
         });
         return updated;
       });
+    } else if (result === 'duplicate') {
+      // Mark as confirmed this session — button shows confirmed state to prevent re-click confusion
+      setConfirmedSet(prev => new Set(prev).add(rowKey));
     }
   }, [locationQuery]);
 

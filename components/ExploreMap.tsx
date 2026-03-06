@@ -16,7 +16,7 @@ interface CacheLocation {
   key: string;
   locationName: string;
   coords: { lat: number; lng: number };
-  updatedAt?: string;
+  updatedAt: string;
 }
 
 function normalizeScanResult(raw: unknown): ScanResult | null {
