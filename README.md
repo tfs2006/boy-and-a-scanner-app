@@ -48,10 +48,16 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 - **Service Filter** — 18 service categories (Police, Fire, EMS, Ham, Railroad, Air, Marine, Military, and more)
 - **Comparison View** — Pin one location to compare side-by-side with a second search
 - **Crowdsource** — Submit field-confirmed frequencies; earn points on the leaderboard
-- **User Profiles** — Set a display name and scanner model; profile data is stored in Supabase so scanner usage can be tracked over time
+- **User Profiles** — Display name, scanner model, bio, and optional location; synced to Supabase
 - **Notification Bell** — In-app notifications for badge unlocks and streak milestones
 - **Dark / Light theme toggle**
 - **Advanced Search** — Filter by State, City, County, or ZIP with structured form fields
+- **Mobile hamburger menu** — Full nav + account actions accessible on all screen sizes
+
+### ScannerSphere Community Hub
+- **Forum** — Categorized discussion threads (Equipment, Frequencies, Events, Legal & Ethics, General) with upvoting and threaded comments
+- **Events Calendar** — Upcoming scanner conventions, meetups, online Q&As, and swap meets (admin-managed via Supabase)
+- **Tips & Tutorials** — 5 static sections covering getting started, programming, best practices, legal/etiquette, and growing the community
 
 ---
 
@@ -87,6 +93,8 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 │   ├── Leaderboard.tsx      # Community rankings + personal stats
 │   ├── ComparisonView.tsx   # Side-by-side location comparison
 │   ├── ProgrammingManual.tsx# Printable SDS100/200 manual modal
+│   ├── CommunityHub.tsx     # ScannerSphere — forum, events, tips & tutorials
+│   ├── ProfileModal.tsx     # User profile editor (display name, scanner model, bio, location)
 │   └── ...
 ├── services/              # API clients and business logic
 │   ├── geminiService.ts     # Hybrid search orchestrator + cache read/write
@@ -94,6 +102,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 │   ├── supabaseClient.ts    # Supabase client initialization
 │   ├── favoritesService.ts  # Saved locations CRUD
 │   ├── crowdsourceService.ts# Frequency confirmations + leaderboard
+│   ├── communityService.ts  # Forum posts, comments, upvotes, events CRUD
 │   └── locationService.ts   # Reverse geocoding helpers
 ├── utils/                 # Exporters, security, PDF generation
 │   ├── security.ts          # Input sanitization (OWASP LLM-01/02)
@@ -182,11 +191,15 @@ Tables are defined in `supabase/crowdsource_schema.sql`:
 |-------|---------|
 | `search_cache` | Cached AI+RR results keyed by `v6_loc_{sanitized_location}` |
 | `favorites` | User-saved locations (RLS-protected by `user_id`) |
-| `profiles` | Public display names, scanner model, and avatar per user |
+| `profiles` | Display names, scanner model, bio, location, and avatar per user |
 | `frequency_reports` | Crowdsourced "Heard It" confirmations and user frequency submissions |
 | `user_stats` | Points, streaks, confirmation/submission counts for the leaderboard |
 | `user_preferences` | Per-user default service type filter settings |
 | `notifications` | In-app notification messages (badge unlocks, streak milestones) |
+| `community_posts` | ScannerSphere forum posts with category, upvote count, and RLS policies |
+| `post_upvotes` | One row per (post, user) pair; DB trigger keeps `community_posts.upvotes` in sync |
+| `post_comments` | Threaded replies on community posts |
+| `events` | Scanner-related events calendar entries (admin-managed) |
 
 ---
 
@@ -229,3 +242,20 @@ The precacher needs its own `.env` containing `GEMINI_API_KEY`, `VITE_SUPABASE_U
 ---
 
 > *For hobby and educational use only. Always comply with local laws regarding radio monitoring. Do not transmit on public safety frequencies.*
+
+---
+
+## Changelog
+
+### March 20, 2026 — ScannerSphere Community Hub
+- Added **COMMUNITY** mode (5th nav tab) — lazy-loaded, available on desktop nav, mobile hamburger, and mobile bottom tab bar
+- **Forum** — categorized discussion threads (Equipment, Frequencies, Events, Legal & Ethics, General) with upvoting and threaded comments; full RLS policies; rate-limit-safe DB trigger for upvote counts
+- **Events Calendar** — upcoming scanner events pulled from new `events` Supabase table; past events auto-hidden
+- **Tips & Tutorials** — 5 curated static sections (always available, no DB dependency)
+- New Supabase tables: `community_posts`, `post_upvotes`, `post_comments`, `events`
+- DB trigger `handle_post_upvote_change` keeps `community_posts.upvotes` consistent on insert/delete without a custom RPC
+- New `services/communityService.ts` with full CRUD for posts, comments, upvotes, and events; input sanitised (angle brackets stripped, lengths capped in both service layer and DB CHECK constraints)
+- Expanded `profiles` table with `bio`, `location_display`, `frequency_interests` columns
+- `ProfileModal` updated with Bio (280 chars) and Location optional fields
+- Added SEO meta tags (`description`, Open Graph, Twitter Card) to `index.html`
+- All 6 smoke tests continue to pass; 0 TypeScript errors
