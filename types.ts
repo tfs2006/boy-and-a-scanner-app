@@ -160,6 +160,45 @@ export interface FrequencyConfirmationCount {
   last_heard: string | null;
 }
 
+// --- ScannerSphere Community Types ---
+
+export type PostCategory = 'equipment' | 'frequencies' | 'events' | 'legal' | 'general';
+
+export interface CommunityPost {
+  id: string;
+  user_id: string;
+  author_username: string;
+  category: PostCategory;
+  title: string;
+  body: string;
+  upvotes: number;
+  user_has_upvoted?: boolean;
+  comment_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PostComment {
+  id: string;
+  post_id: string;
+  user_id: string;
+  author_username: string;
+  body: string;
+  created_at: string;
+}
+
+export interface CommunityEvent {
+  id: string;
+  title: string;
+  description: string | null;
+  event_date: string;
+  event_time: string | null;
+  location_text: string | null;
+  url: string | null;
+  event_type: 'convention' | 'meetup' | 'online' | 'swap_meet' | 'other';
+  created_at: string;
+}
+
 // Manual Generator Types
 export interface ManualStep {
   text: string;

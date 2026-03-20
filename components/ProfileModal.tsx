@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Save, Radio, Zap, Star, Flame, Trophy } from 'lucide-react';
+import { X, Save, Radio, Zap, Star, Flame, Trophy, MapPin, BookOpen } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { getMyStats } from '../services/crowdsourceService';
 import { UserStats } from '../types';
@@ -14,6 +14,9 @@ interface Profile {
   username: string;
   scanner_model: string;
   avatar_url: string | null;
+  bio: string;
+  location_display: string;
+  frequency_interests: string[];
 }
 
 function getInitials(name: string): string {
@@ -38,7 +41,7 @@ function getAvatarColor(name: string): string {
 }
 
 export function ProfileModal({ session, onClose }: Props) {
-  const [profile, setProfile] = useState<Profile>({ username: '', scanner_model: '', avatar_url: null });
+  const [profile, setProfile] = useState<Profile>({ username: '', scanner_model: '', avatar_url: null, bio: '', location_display: '', frequency_interests: [] });
   const [stats, setStats] = useState<UserStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -48,14 +51,17 @@ export function ProfileModal({ session, onClose }: Props) {
   useEffect(() => {
     if (!supabase) return;
     Promise.all([
-      supabase.from('profiles').select('username, scanner_model, avatar_url').eq('user_id', session.user.id).maybeSingle(),
+      supabase.from('profiles').select('username, scanner_model, avatar_url, bio, location_display, frequency_interests').eq('user_id', session.user.id).maybeSingle(),
       getMyStats(),
     ]).then(([profileRes, statsData]) => {
       if (profileRes.data) {
         setProfile({
-          username: profileRes.data.username ?? '',
-          scanner_model: profileRes.data.scanner_model ?? '',
-          avatar_url: profileRes.data.avatar_url ?? null,
+          username:             profileRes.data.username ?? '',
+          scanner_model:        profileRes.data.scanner_model ?? '',
+          avatar_url:           profileRes.data.avatar_url ?? null,
+          bio:                  profileRes.data.bio ?? '',
+          location_display:     profileRes.data.location_display ?? '',
+          frequency_interests:  profileRes.data.frequency_interests ?? [],
         });
       } else {
         // Fall back to auth metadata
@@ -74,7 +80,14 @@ export function ProfileModal({ session, onClose }: Props) {
     setSaving(true);
     setError(null);
     const { error: err } = await supabase.from('profiles').upsert(
-      { user_id: session.user.id, username: profile.username.trim(), scanner_model: profile.scanner_model.trim() },
+      {
+        user_id:              session.user.id,
+        username:             profile.username.trim(),
+        scanner_model:        profile.scanner_model.trim(),
+        bio:                  profile.bio.trim() || null,
+        location_display:     profile.location_display.trim() || null,
+        frequency_interests:  profile.frequency_interests,
+      },
       { onConflict: 'user_id' }
     );
     if (err) {
@@ -158,6 +171,29 @@ export function ProfileModal({ session, onClose }: Props) {
                   className="w-full px-3 py-2 bg-slate-900/60 border border-slate-700 rounded-lg text-sm text-slate-200 font-mono-tech focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20"
                   placeholder="e.g. Uniden SDS200, BCD536HP…"
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase font-mono-tech mb-1 flex items-center gap-1.5"><MapPin className="w-3 h-3" /> Location (optional)</label>
+                <input
+                  type="text"
+                  value={profile.location_display}
+                  onChange={e => setProfile(p => ({ ...p, location_display: e.target.value }))}
+                  maxLength={80}
+                  className="w-full px-3 py-2 bg-slate-900/60 border border-slate-700 rounded-lg text-sm text-slate-200 font-mono-tech focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20"
+                  placeholder="e.g. Nashville, TN"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase font-mono-tech mb-1 flex items-center gap-1.5"><BookOpen className="w-3 h-3" /> Bio (optional)</label>
+                <textarea
+                  value={profile.bio}
+                  onChange={e => setProfile(p => ({ ...p, bio: e.target.value }))}
+                  maxLength={280}
+                  rows={3}
+                  className="w-full px-3 py-2 bg-slate-900/60 border border-slate-700 rounded-lg text-sm text-slate-200 font-mono-tech focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 resize-none"
+                  placeholder="Tell the community a bit about yourself…"
+                />
+                <div className="text-right text-[10px] text-slate-600 -mt-0.5">{profile.bio.length}/280</div>
               </div>
             </div>
 

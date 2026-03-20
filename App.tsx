@@ -1,6 +1,6 @@
 
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu } from 'lucide-react';
+import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu, Users } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
 import { SearchResponse, ScanResult, ServiceType } from './types';
@@ -24,6 +24,7 @@ const Leaderboard = lazy(async () => ({ default: (await import('./components/Lea
 const ContributeModal = lazy(async () => ({ default: (await import('./components/ContributeModal')).ContributeModal }));
 const ExploreMap = lazy(async () => ({ default: (await import('./components/ExploreMap')).ExploreMap }));
 const ProfileModal = lazy(async () => ({ default: (await import('./components/ProfileModal')).ProfileModal }));
+const CommunityHub = lazy(async () => ({ default: (await import('./components/CommunityHub')).CommunityHub }));
 
 const SectionLoader = ({ label = 'Loading module...' }: { label?: string }) => (
   <div className="flex items-center justify-center py-16 text-slate-400 font-mono-tech text-sm gap-3">
@@ -37,7 +38,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const sessionUserId = session?.user.id ?? null;
 
-  const [mode, setMode] = useState<'scan' | 'trip' | 'leaderboard' | 'explore'>('scan');
+  const [mode, setMode] = useState<'scan' | 'trip' | 'leaderboard' | 'explore' | 'community'>('scan');
 
   // Crowdsource / Contribute Modal
   const [showContribute, setShowContribute] = useState(false);
@@ -714,6 +715,12 @@ function App() {
                 >
                   <Trophy className="w-3 h-3" /> <span className="hidden lg:inline">RANKS</span>
                 </button>
+                <button
+                  onClick={() => setMode('community')}
+                  className={`px-2.5 lg:px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-1.5 ${mode === 'community' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                  <Users className="w-3 h-3" /> <span className="hidden lg:inline">COMMUNITY</span>
+                </button>
               </div>
 
               {/* Settings + Sign Out */}
@@ -793,10 +800,11 @@ function App() {
               <p className="text-[9px] text-slate-500 font-mono-tech uppercase tracking-widest mb-2">Navigate</p>
               <div className="grid grid-cols-2 gap-2">
                 {([
-                  { key: 'scan',        label: 'LOCAL',   Icon: LocateFixed, color: 'text-cyan-400',   active: 'bg-cyan-600/20 border-cyan-600/40' },
-                  { key: 'trip',        label: 'TRIP',    Icon: Map,         color: 'text-amber-400',  active: 'bg-amber-600/20 border-amber-600/40' },
-                  { key: 'explore',     label: 'EXPLORE', Icon: Globe,       color: 'text-cyan-400',   active: 'bg-cyan-700/20 border-cyan-700/40' },
-                  { key: 'leaderboard', label: 'RANKS',   Icon: Trophy,      color: 'text-yellow-400', active: 'bg-yellow-600/20 border-yellow-600/40' },
+                  { key: 'scan',        label: 'LOCAL',     Icon: LocateFixed, color: 'text-cyan-400',   active: 'bg-cyan-600/20 border-cyan-600/40' },
+                  { key: 'trip',        label: 'TRIP',      Icon: Map,         color: 'text-amber-400',  active: 'bg-amber-600/20 border-amber-600/40' },
+                  { key: 'explore',     label: 'EXPLORE',   Icon: Globe,       color: 'text-cyan-400',   active: 'bg-cyan-700/20 border-cyan-700/40' },
+                  { key: 'leaderboard', label: 'RANKS',     Icon: Trophy,      color: 'text-yellow-400', active: 'bg-yellow-600/20 border-yellow-600/40' },
+                  { key: 'community',   label: 'COMMUNITY', Icon: Users,       color: 'text-blue-400',   active: 'bg-blue-600/20 border-blue-600/40' },
                 ] as const).map(({ key, label, Icon, color, active }) => (
                   <button
                     key={key}
@@ -915,6 +923,14 @@ function App() {
             <Trophy className="w-5 h-5" />
             <span className="text-[10px] font-mono-tech font-bold uppercase tracking-wider">RANKS</span>
           </button>
+          <button
+            onClick={() => setMode('community')}
+            className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${mode === 'community' ? 'text-blue-400' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            {mode === 'community' && <span className="tab-active-indicator bg-blue-400" />}
+            <Users className="w-5 h-5" />
+            <span className="text-[10px] font-mono-tech font-bold uppercase tracking-wider">COMMUNITY</span>
+          </button>
         </div>
       </div>
 
@@ -1018,6 +1034,10 @@ function App() {
         ) : mode === 'explore' ? (
           <Suspense fallback={<SectionLoader label="Loading cache explorer..." />}>
             <ExploreMap isLoggedIn={!!session} />
+          </Suspense>
+        ) : mode === 'community' ? (
+          <Suspense fallback={<SectionLoader label="Loading community hub..." />}>
+            <CommunityHub session={session} />
           </Suspense>
         ) : (
           <>

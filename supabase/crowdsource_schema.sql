@@ -180,3 +180,142 @@ CREATE POLICY "Users can update their own notifications"
   ON public.notifications FOR UPDATE USING (auth.uid() = user_id);
 
 CREATE INDEX IF NOT EXISTS notifications_user_read_idx ON public.notifications (user_id, read);
+
+-- ---------------------------------------------------------------------------
+-- 7. Profile expansions for ScannerSphere community features
+-- ---------------------------------------------------------------------------
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS bio               TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS location_display  TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS frequency_interests TEXT[] DEFAULT '{}';
+
+-- ---------------------------------------------------------------------------
+-- 8. community_posts — ScannerSphere discussion forum
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.community_posts (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  author_username TEXT        NOT NULL DEFAULT 'Anonymous',
+  category        TEXT        NOT NULL DEFAULT 'general'
+                              CHECK (category IN ('equipment','frequencies','events','legal','general')),
+  title           TEXT        NOT NULL CHECK (char_length(title)   BETWEEN 3 AND 150),
+  body            TEXT        NOT NULL CHECK (char_length(body)    BETWEEN 10 AND 5000),
+  upvotes         INTEGER     NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_community_posts_category ON public.community_posts (category);
+CREATE INDEX IF NOT EXISTS idx_community_posts_created  ON public.community_posts (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_community_posts_user     ON public.community_posts (user_id);
+
+ALTER TABLE public.community_posts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Posts are viewable by everyone"      ON public.community_posts;
+CREATE POLICY "Posts are viewable by everyone"
+  ON public.community_posts FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users can insert posts" ON public.community_posts;
+CREATE POLICY "Authenticated users can insert posts"
+  ON public.community_posts FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update their own posts"    ON public.community_posts;
+CREATE POLICY "Users can update their own posts"
+  ON public.community_posts FOR UPDATE USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete their own posts"    ON public.community_posts;
+CREATE POLICY "Users can delete their own posts"
+  ON public.community_posts FOR DELETE USING (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- 9. post_upvotes — one row per (post, user) pair; trigger maintains count
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.post_upvotes (
+  post_id  UUID NOT NULL REFERENCES public.community_posts(id) ON DELETE CASCADE,
+  user_id  UUID NOT NULL REFERENCES auth.users(id)             ON DELETE CASCADE,
+  PRIMARY KEY (post_id, user_id)
+);
+
+ALTER TABLE public.post_upvotes ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Upvotes viewable by everyone"  ON public.post_upvotes;
+CREATE POLICY "Upvotes viewable by everyone"
+  ON public.post_upvotes FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users can upvote" ON public.post_upvotes;
+CREATE POLICY "Authenticated users can upvote"
+  ON public.post_upvotes FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can remove their upvote"  ON public.post_upvotes;
+CREATE POLICY "Users can remove their upvote"
+  ON public.post_upvotes FOR DELETE USING (auth.uid() = user_id);
+
+-- Trigger: keep community_posts.upvotes in sync automatically
+CREATE OR REPLACE FUNCTION public.handle_post_upvote_change()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    UPDATE public.community_posts SET upvotes = upvotes + 1          WHERE id = NEW.post_id;
+  ELSIF TG_OP = 'DELETE' THEN
+    UPDATE public.community_posts SET upvotes = GREATEST(upvotes - 1, 0) WHERE id = OLD.post_id;
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_post_upvote_change ON public.post_upvotes;
+CREATE TRIGGER on_post_upvote_change
+  AFTER INSERT OR DELETE ON public.post_upvotes
+  FOR EACH ROW EXECUTE FUNCTION public.handle_post_upvote_change();
+
+-- ---------------------------------------------------------------------------
+-- 10. post_comments — threaded replies on community posts
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.post_comments (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id         UUID        NOT NULL REFERENCES public.community_posts(id) ON DELETE CASCADE,
+  user_id         UUID        NOT NULL REFERENCES auth.users(id)             ON DELETE CASCADE,
+  author_username TEXT        NOT NULL DEFAULT 'Anonymous',
+  body            TEXT        NOT NULL CHECK (char_length(body) BETWEEN 1 AND 1000),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_comments_post ON public.post_comments (post_id, created_at);
+
+ALTER TABLE public.post_comments ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Comments viewable by everyone"      ON public.post_comments;
+CREATE POLICY "Comments viewable by everyone"
+  ON public.post_comments FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Authenticated users can comment"    ON public.post_comments;
+CREATE POLICY "Authenticated users can comment"
+  ON public.post_comments FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete their own comments" ON public.post_comments;
+CREATE POLICY "Users can delete their own comments"
+  ON public.post_comments FOR DELETE USING (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- 11. events — scanner-related events calendar (admin-managed rows)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.events (
+  id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  title         TEXT        NOT NULL,
+  description   TEXT,
+  event_date    DATE        NOT NULL,
+  event_time    TEXT,
+  location_text TEXT,
+  url           TEXT,
+  event_type    TEXT        NOT NULL DEFAULT 'other'
+                            CHECK (event_type IN ('convention','meetup','online','swap_meet','other')),
+  created_by    UUID        REFERENCES auth.users(id),
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_date ON public.events (event_date);
+
+ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Events viewable by everyone" ON public.events;
+CREATE POLICY "Events viewable by everyone"
+  ON public.events FOR SELECT USING (true);
