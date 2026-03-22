@@ -83,7 +83,11 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 ├── api/                   # Vercel serverless functions
 │   ├── search.ts            # POST /api/search  — Gemini AI frequency search
 │   ├── rrdb.ts              # POST /api/rrdb    — RadioReference SOAP wrapper
-│   └── trip.ts              # POST /api/trip    — Gemini trip planner
+│   ├── trip.ts              # POST /api/trip    — Gemini trip planner
+│   └── exports/sds100/      # SDS100 scaffold endpoints
+│       ├── validate.ts      # POST /api/exports/sds100/validate
+│       ├── build.ts         # POST /api/exports/sds100/build
+│       └── build-zip.ts     # POST /api/exports/sds100/build-zip
 ├── components/            # React UI components
 │   ├── Auth.tsx             # Google OAuth login page
 │   ├── SearchForm.tsx       # Simple + advanced location search input
@@ -109,6 +113,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 │   ├── csvGenerator.ts      # CSV export
 │   ├── exportUtils.ts       # Sentinel paste export
 │   ├── sentinelExporter.ts  # ZIP package for Uniden Sentinel
+│   ├── sds100/              # SDS100 scaffold core (types/validation/renderer/builder)
 │   ├── pdfGenerator.ts      # Trip PDF via jsPDF
 │   └── manualGenerator.ts   # SDS100/200 programming manual generator
 ├── precacher/             # Oracle VM pre-cache script

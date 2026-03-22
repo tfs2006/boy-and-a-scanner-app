@@ -3,7 +3,7 @@ import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu, Users } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
-import { SearchResponse, ScanResult, ServiceType } from './types';
+import { Agency, SearchResponse, ScanResult, ServiceType, TrunkedSystem } from './types';
 import { FrequencyDisplay } from './components/FrequencyDisplay';
 import { Auth } from './components/Auth';
 import { isValidLocationInput } from './utils/security';
@@ -15,6 +15,7 @@ import { loadServicePreferences, saveServicePreferences, getLocalServicePreferen
 import { getNotifications, getUnreadCount, markAllRead, AppNotification } from './services/notificationsService';
 import { SearchSuggestions, saveSearchToHistory } from './components/SearchSuggestions';
 import { SearchForm } from './components/SearchForm';
+import type { SystemFilterKey } from './utils/sentinelExporter';
 
 const TripPlanner = lazy(async () => ({ default: (await import('./components/TripPlanner')).TripPlanner }));
 const ProgrammingManual = lazy(async () => ({ default: (await import('./components/ProgrammingManual')).ProgrammingManual }));
@@ -25,6 +26,79 @@ const ContributeModal = lazy(async () => ({ default: (await import('./components
 const ExploreMap = lazy(async () => ({ default: (await import('./components/ExploreMap')).ExploreMap }));
 const ProfileModal = lazy(async () => ({ default: (await import('./components/ProfileModal')).ProfileModal }));
 const CommunityHub = lazy(async () => ({ default: (await import('./components/CommunityHub')).CommunityHub }));
+
+const SDS100_FILTER_OPTIONS: Array<{ key: SystemFilterKey; label: string; sublabel: string }> = [
+  { key: 'analog', label: 'Analog', sublabel: 'FM / AM' },
+  { key: 'p25-conv', label: 'P25 Conventional', sublabel: 'Conventional' },
+  { key: 'p25-phase1', label: 'P25 Phase I', sublabel: 'Trunked' },
+  { key: 'p25-phase2', label: 'P25 Phase II', sublabel: 'Trunked' },
+  { key: 'dmr-conv', label: 'DMR Conventional', sublabel: 'Conventional' },
+  { key: 'dmr-trunked', label: 'DMR Trunked', sublabel: 'Trunked' },
+  { key: 'nxdn-conv', label: 'NXDN Conventional', sublabel: 'Conventional' },
+  { key: 'nxdn-trunked', label: 'NXDN Trunked', sublabel: 'Trunked' },
+  { key: 'edacs', label: 'EDACS', sublabel: 'Trunked' },
+  { key: 'ltr', label: 'LTR', sublabel: 'Trunked' },
+  { key: 'motorola', label: 'Motorola', sublabel: 'Type I/II' }
+];
+
+const SDS100_CONVENTIONAL_KEYS: SystemFilterKey[] = ['analog', 'p25-conv', 'dmr-conv', 'nxdn-conv'];
+const SDS100_TRUNKED_KEYS: SystemFilterKey[] = ['p25-phase1', 'p25-phase2', 'dmr-trunked', 'nxdn-trunked', 'edacs', 'ltr', 'motorola'];
+
+const SDS100_PRESETS: Array<{ label: string; keys: SystemFilterKey[] }> = [
+  { label: 'Conventional Only', keys: SDS100_CONVENTIONAL_KEYS },
+  { label: 'Trunked Only', keys: SDS100_TRUNKED_KEYS },
+  { label: 'Public Safety Mix', keys: ['analog', 'p25-conv', 'p25-phase1', 'p25-phase2', 'dmr-conv', 'dmr-trunked', 'nxdn-conv', 'nxdn-trunked'] },
+];
+
+function freqMatchesSds100Filter(freq: Agency['frequencies'][number], key: SystemFilterKey): boolean {
+  const mode = (freq.mode || '').toUpperCase();
+  switch (key) {
+    case 'analog':
+      return /^(FM|FMN|NFM|AM|AN|WFM|USB|LSB|CW|FB|MO)$/.test(mode) && !freq.nac && !freq.colorCode && !freq.ran;
+    case 'p25-conv':
+      return /P25|APCO/.test(mode) || (!!freq.nac && !/LTR|EDACS/i.test(mode));
+    case 'dmr-conv':
+      return /DMR/.test(mode) || !!freq.colorCode;
+    case 'nxdn-conv':
+      return /NXDN|NXD/.test(mode) || !!freq.ran;
+    default:
+      return false;
+  }
+}
+
+function systemMatchesSds100Filter(system: TrunkedSystem, key: SystemFilterKey): boolean {
+  const type = (system.type || '').toLowerCase();
+  switch (key) {
+    case 'p25-phase1': return /p25/.test(type) && !/phase\s*i{2}|phase\s*2|tdma/.test(type);
+    case 'p25-phase2': return /phase\s*i{2}|phase\s*2|tdma/.test(type);
+    case 'dmr-trunked': return /\bdmr\b/.test(type);
+    case 'nxdn-trunked': return /nxdn|nexedge/.test(type);
+    case 'edacs': return /edacs/.test(type);
+    case 'ltr': return /\bltr\b/.test(type);
+    case 'motorola': return /motorola|type\s*i/.test(type);
+    default: return false;
+  }
+}
+
+function detectSds100Filters(data: ScanResult): Set<SystemFilterKey> {
+  const present = new Set<SystemFilterKey>();
+
+  for (const agency of data.agencies || []) {
+    for (const freq of agency.frequencies || []) {
+      SDS100_CONVENTIONAL_KEYS.forEach((key) => {
+        if (freqMatchesSds100Filter(freq, key)) present.add(key);
+      });
+    }
+  }
+
+  for (const system of data.trunkedSystems || []) {
+    SDS100_TRUNKED_KEYS.forEach((key) => {
+      if (systemMatchesSds100Filter(system, key)) present.add(key);
+    });
+  }
+
+  return present;
+}
 
 const SectionLoader = ({ label = 'Loading module...' }: { label?: string }) => (
   <div className="flex items-center justify-center py-16 text-slate-400 font-mono-tech text-sm gap-3">
@@ -69,6 +143,45 @@ function App() {
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showSds100Modal, setShowSds100Modal] = useState(false);
+  const [sds100Filters, setSds100Filters] = useState<Set<SystemFilterKey>>(new Set());
+
+  const sds100ExportSummary = React.useMemo(() => {
+    if (!result) {
+      return {
+        agencies: 0,
+        channels: 0,
+        trunkedSystems: 0,
+        talkgroups: 0,
+      };
+    }
+
+    const selected = sds100Filters;
+
+    const matchedAgencies = (result.agencies || [])
+      .map((agency) => ({
+        ...agency,
+        frequencies: (agency.frequencies || []).filter((freq) =>
+          SDS100_CONVENTIONAL_KEYS.some((key) => selected.has(key) && freqMatchesSds100Filter(freq, key))
+        ),
+      }))
+      .filter((agency) => agency.frequencies.length > 0);
+
+    const matchedSystems = (result.trunkedSystems || []).filter((system) =>
+      SDS100_TRUNKED_KEYS.some((key) => selected.has(key) && systemMatchesSds100Filter(system, key))
+    );
+
+    return {
+      agencies: matchedAgencies.length,
+      channels: matchedAgencies.reduce((sum, agency) => sum + agency.frequencies.length, 0),
+      trunkedSystems: matchedSystems.length,
+      talkgroups: matchedSystems.reduce((sum, system) => sum + (system.talkgroups?.length || 0), 0),
+    };
+  }, [result, sds100Filters]);
+
+  const sds100AvailableFilters = React.useMemo(() => {
+    return result ? detectSds100Filters(result) : new Set<SystemFilterKey>();
+  }, [result]);
 
 
   // Comparison State
@@ -476,6 +589,43 @@ function App() {
   const handleChirpExport = async (data: ScanResult) => {
     const { exportChirpCSV } = await import('./utils/chirpExporter');
     exportChirpCSV(data);
+  };
+
+  const openSds100Modal = (data: ScanResult) => {
+    const available = detectSds100Filters(data);
+    setSds100Filters(available);
+    setShowSds100Modal(true);
+  };
+
+  const toggleSds100Filter = (key: SystemFilterKey) => {
+    setSds100Filters(prev => {
+      if (!sds100AvailableFilters.has(key)) {
+        return prev;
+      }
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const handleSds100Export = async (data: ScanResult) => {
+    try {
+      const { exportSentinelZip } = await import('./utils/sentinelExporter');
+      await exportSentinelZip(data, Array.from(sds100Filters));
+      setShowSds100Modal(false);
+    } catch (err) {
+      console.error('SDS100 export failed:', err);
+      alert('Failed to generate SDS100 package. Please try again.');
+    }
+  };
+
+  const applySds100Preset = (keys: SystemFilterKey[]) => {
+    const allowed = keys.filter((key) => sds100AvailableFilters.has(key));
+    setSds100Filters(new Set(allowed));
   };
 
   // handleSearch removed - logic moved to SearchForm onSearch prop
@@ -1352,15 +1502,14 @@ function App() {
                         <FileDown className="w-5 h-5" />
                         <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">CHIRP</span>
                       </button>
-                      {/* 
-                    <button
-                      onClick={() => exportSentinelZip(result)}
-                      className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-amber-900/30 border-amber-500/50 text-amber-400 hover:bg-amber-900/50 hover:text-white transition-colors"
-                    >
-                      <Zap className="w-4 h-4" />
-                      <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">SDS100</span>
-                    </button> 
-                    */}
+                      <button
+                        onClick={() => openSds100Modal(result)}
+                        className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-amber-900/40 border-amber-500/60 text-amber-400 hover:bg-amber-900/60 hover:text-white transition-all shadow-lg shadow-amber-900/20 hover:scale-105"
+                        title="Export SDS100/SDS200 package with selected system types"
+                      >
+                        <Zap className="w-5 h-5" />
+                        <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">SDS100</span>
+                      </button>
                       <button
                         onClick={() => setShowManual(true)}
                         className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-blue-900/40 border-blue-500/60 text-blue-400 hover:bg-blue-900/60 hover:text-white transition-all shadow-lg shadow-blue-900/20 hover:scale-105"
@@ -1445,6 +1594,132 @@ function App() {
                 </Suspense>
               )
             }
+
+            {showSds100Modal && result && (
+              <div className="fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 print-hide">
+                <div className="w-full max-w-2xl bg-slate-900 border border-slate-700 rounded-xl shadow-2xl">
+                  <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-white font-mono-tech font-bold uppercase tracking-wider">SDS100 Export Options</h3>
+                      <p className="text-xs text-slate-400 mt-1">Choose system types to include in your scanner package.</p>
+                    </div>
+                    <button
+                      onClick={() => setShowSds100Modal(false)}
+                      className="text-slate-400 hover:text-white"
+                      title="Close"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setSds100Filters(new Set(Array.from(sds100AvailableFilters)))}
+                        className="px-3 py-1.5 rounded border border-cyan-500/50 bg-cyan-900/30 text-cyan-300 text-xs font-mono-tech"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        onClick={() => setSds100Filters(new Set())}
+                        className="px-3 py-1.5 rounded border border-slate-600 bg-slate-800 text-slate-300 text-xs font-mono-tech"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {SDS100_PRESETS.map((preset) => {
+                        const availableCount = preset.keys.filter((key) => sds100AvailableFilters.has(key)).length;
+                        const disabled = availableCount === 0;
+                        return (
+                        <button
+                          key={preset.label}
+                          onClick={() => applySds100Preset(preset.keys)}
+                          disabled={disabled}
+                          className={`px-3 py-1.5 rounded border text-xs font-mono-tech ${disabled
+                            ? 'border-slate-700 bg-slate-800/50 text-slate-500 cursor-not-allowed'
+                            : 'border-violet-500/50 bg-violet-900/30 text-violet-300 hover:bg-violet-900/50'
+                            }`}
+                          title={disabled ? 'No matching systems for this preset in current results' : `Apply ${preset.label}`}
+                        >
+                          {preset.label}{!disabled ? ` (${availableCount})` : ''}
+                        </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {SDS100_FILTER_OPTIONS.map(option => {
+                        const checked = sds100Filters.has(option.key);
+                        const available = sds100AvailableFilters.has(option.key);
+                        return (
+                          <button
+                            key={option.key}
+                            onClick={() => toggleSds100Filter(option.key)}
+                            disabled={!available}
+                            className={`text-left p-3 rounded border transition-colors ${!available
+                                ? 'border-slate-800 bg-slate-900/40 text-slate-600 cursor-not-allowed'
+                                : checked
+                                ? 'border-amber-500/70 bg-amber-900/20 text-amber-200'
+                                : 'border-slate-700 bg-slate-800/60 text-slate-300 hover:border-slate-500'
+                              }`}
+                            title={available ? `Toggle ${option.label}` : `No matching ${option.label} systems in current results`}
+                          >
+                            <div className="flex items-center gap-2">
+                              {checked ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+                              <span className="font-mono-tech text-sm font-bold uppercase tracking-wider">{option.label}</span>
+                            </div>
+                            <div className={`text-[11px] mt-1 ${available ? 'text-slate-400' : 'text-slate-600'}`}>{option.sublabel}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="text-xs text-slate-400 font-mono-tech">
+                      Selected: {sds100Filters.size} system type{sds100Filters.size === 1 ? '' : 's'}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono-tech">
+                      <div className="rounded border border-slate-700 bg-slate-800/60 p-2 text-slate-300">
+                        Agencies: <span className="text-white">{sds100ExportSummary.agencies}</span>
+                      </div>
+                      <div className="rounded border border-slate-700 bg-slate-800/60 p-2 text-slate-300">
+                        Channels: <span className="text-white">{sds100ExportSummary.channels}</span>
+                      </div>
+                      <div className="rounded border border-slate-700 bg-slate-800/60 p-2 text-slate-300">
+                        Systems: <span className="text-white">{sds100ExportSummary.trunkedSystems}</span>
+                      </div>
+                      <div className="rounded border border-slate-700 bg-slate-800/60 p-2 text-slate-300">
+                        Talkgroups: <span className="text-white">{sds100ExportSummary.talkgroups}</span>
+                      </div>
+                    </div>
+
+                    {sds100Filters.size > 0 && sds100ExportSummary.channels === 0 && sds100ExportSummary.trunkedSystems === 0 && (
+                      <div className="text-xs text-amber-300 border border-amber-700/60 bg-amber-900/20 rounded p-2 font-mono-tech">
+                        No matching systems in current results for selected filters.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="px-5 py-4 border-t border-slate-700 flex justify-end gap-2">
+                    <button
+                      onClick={() => setShowSds100Modal(false)}
+                      className="px-4 py-2 rounded border border-slate-600 bg-slate-800 text-slate-300 text-sm font-mono-tech"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleSds100Export(result)}
+                      disabled={sds100Filters.size === 0}
+                      className="px-4 py-2 rounded border border-amber-500/70 bg-amber-900/40 text-amber-300 text-sm font-mono-tech disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Download SDS100 Package
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {
               showContribute && (

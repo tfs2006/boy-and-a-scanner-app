@@ -10,6 +10,72 @@ import { ScanResult, TripResult, Agency, TrunkedSystem } from '../types';
  * (SDS100 / SDS200 programming).
  */
 
+export type SystemFilterKey =
+  | 'analog'
+  | 'p25-conv' | 'p25-phase1' | 'p25-phase2'
+  | 'dmr-conv' | 'dmr-trunked'
+  | 'nxdn-conv' | 'nxdn-trunked'
+  | 'edacs' | 'ltr' | 'motorola';
+
+const CONV_FILTER_KEYS: SystemFilterKey[] = ['analog', 'p25-conv', 'dmr-conv', 'nxdn-conv'];
+const TRUNK_FILTER_KEYS: SystemFilterKey[] = ['p25-phase1', 'p25-phase2', 'dmr-trunked', 'nxdn-trunked', 'edacs', 'ltr', 'motorola'];
+
+function freqMatchesFilter(freq: Agency['frequencies'][number], key: SystemFilterKey): boolean {
+    const mode = (freq.mode || '').toUpperCase();
+    switch (key) {
+        case 'analog':
+            return /^(FM|FMN|NFM|AM|AN|WFM|USB|LSB|CW|FB|MO)$/.test(mode) && !freq.nac && !freq.colorCode && !freq.ran;
+        case 'p25-conv':
+            return /P25|APCO/.test(mode) || (!!freq.nac && !/LTR|EDACS/i.test(mode));
+        case 'dmr-conv':
+            return /DMR/.test(mode) || !!freq.colorCode;
+        case 'nxdn-conv':
+            return /NXDN|NXD/.test(mode) || !!freq.ran;
+        default:
+            return false;
+    }
+}
+
+function systemMatchesFilter(system: TrunkedSystem, key: SystemFilterKey): boolean {
+    const type = (system.type || '').toLowerCase();
+    switch (key) {
+        case 'p25-phase1': return /p25/.test(type) && !/phase\s*i{2}|phase\s*2|tdma/.test(type);
+        case 'p25-phase2': return /phase\s*i{2}|phase\s*2|tdma/.test(type);
+        case 'dmr-trunked': return /\bdmr\b/.test(type);
+        case 'nxdn-trunked': return /nxdn|nexedge/.test(type);
+        case 'edacs': return /edacs/.test(type);
+        case 'ltr': return /\bltr\b/.test(type);
+        case 'motorola': return /motorola|type\s*i/.test(type);
+        default: return false;
+    }
+}
+
+function filterScanResultBySystemTypes(data: ScanResult, selectedFilters?: SystemFilterKey[]): ScanResult {
+    if (!selectedFilters || selectedFilters.length === 0) {
+        return data;
+    }
+
+    const selected = new Set<SystemFilterKey>(selectedFilters);
+
+    const agencies = (data.agencies || [])
+        .map(agency => ({
+            ...agency,
+            frequencies: (agency.frequencies || []).filter(freq =>
+                CONV_FILTER_KEYS.some(key => selected.has(key) && freqMatchesFilter(freq, key))
+            )
+        }))
+        .filter(agency => agency.frequencies.length > 0);
+
+    const trunkedSystems = (data.trunkedSystems || [])
+        .filter(system => TRUNK_FILTER_KEYS.some(key => selected.has(key) && systemMatchesFilter(system, key)));
+
+    return {
+        ...data,
+        agencies,
+        trunkedSystems,
+    };
+}
+
 // --- CSV Formatting Helpers ---
 
 const esc = (str: string | undefined): string => {
@@ -263,29 +329,41 @@ function safeFilename(name: string): string {
     return name.replace(/[^a-zA-Z0-9_\- ]/g, '').replace(/\s+/g, '_').substring(0, 40);
 }
 
+function timestampTag(): string {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    const s = String(d.getSeconds()).padStart(2, '0');
+    return `${y}${m}${day}_${h}${min}${s}`;
+}
+
 // --- Main Export Functions ---
 
 /**
  * Export a single scan result as a Sentinel-compatible ZIP
  */
-export async function exportSentinelZip(data: ScanResult): Promise<void> {
+export async function exportSentinelZip(data: ScanResult, selectedFilters?: SystemFilterKey[]): Promise<void> {
+    const filteredData = filterScanResultBySystemTypes(data, selectedFilters);
     const zip = new JSZip();
-    const locName = safeFilename(data.locationName);
+    const locName = safeFilename(filteredData.locationName);
 
     // Import Guide
-    zip.file('README_IMPORT_GUIDE.txt', buildImportGuide(data));
+    zip.file('README_IMPORT_GUIDE.txt', buildImportGuide(filteredData));
 
     // Quick Reference
-    zip.file('Quick_Reference.txt', buildQuickReference(data));
+    zip.file('Quick_Reference.txt', buildQuickReference(filteredData));
 
     // Conventional CSV
-    const agencies = data.agencies || [];
+    const agencies = filteredData.agencies || [];
     if (agencies.length > 0) {
-        zip.file('Conventional_Channels.csv', buildConventionalCSV(agencies, data.locationName));
+        zip.file('Conventional_Channels.csv', buildConventionalCSV(agencies, filteredData.locationName));
     }
 
     // Trunked CSVs (one per system)
-    const systems = data.trunkedSystems || [];
+    const systems = filteredData.trunkedSystems || [];
     for (let i = 0; i < systems.length; i++) {
         const sys = systems[i];
         const sysName = safeFilename(sys.name);
@@ -297,7 +375,7 @@ export async function exportSentinelZip(data: ScanResult): Promise<void> {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `SDS100_${locName}.zip`;
+    link.download = `SDS100_${locName}_${timestampTag()}.zip`;
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -348,7 +426,7 @@ export async function exportTripSentinelZip(trip: TripResult): Promise<void> {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `SDS100_Trip_${tripName}.zip`;
+    link.download = `SDS100_Trip_${tripName}_${timestampTag()}.zip`;
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
