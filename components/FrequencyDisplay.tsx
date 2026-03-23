@@ -1033,6 +1033,42 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
                 </div>
               </button>
 
+              <div className="px-4 py-4 border-t border-slate-700/60 bg-slate-950/20">
+                <div className="text-xs text-slate-500 mb-3">
+                  Control and site frequencies stay visible here so you can still program the system even when no talkgroups are currently shown.
+                </div>
+                <div className="space-y-3">
+                  {silentSystems.map((sys, index) => (
+                    <div key={`silent-preview-${index}`} className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-mono-tech text-slate-200">{sys.name}</div>
+                          <div className="text-[10px] uppercase tracking-wider text-slate-500">{sys.type} • {sys.location}</div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {(sys.frequencies || []).length > 0 ? (
+                            (sys.frequencies || []).map((freq, freqIndex) => {
+                              const isControl = freq.use?.toLowerCase().includes('control') || freq.use?.toLowerCase() === 'c';
+                              return (
+                                <div
+                                  key={`silent-preview-${index}-${freqIndex}`}
+                                  className={`flex items-center gap-1 rounded border px-2 py-1 ${isControl ? 'border-red-500/40 bg-red-950/30' : 'border-slate-700 bg-slate-800/70'}`}
+                                >
+                                  <span className={`text-xs font-mono-tech font-bold ${isControl ? 'text-red-300' : 'text-slate-200'}`}>{freq.freq}</span>
+                                  <span className="text-[9px] uppercase text-slate-500">{freq.use || 'Site'}</span>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="text-xs text-slate-500">No site frequencies listed</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {showSilentSystems && (
                 <div className="px-4 pb-4 border-t border-slate-700/60">
                   <div className="pt-4 text-xs text-slate-500 mb-4">

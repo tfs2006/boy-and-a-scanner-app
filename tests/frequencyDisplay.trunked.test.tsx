@@ -44,14 +44,16 @@ describe('FrequencyDisplay trunked system UX', () => {
     render(<FrequencyDisplay data={data} locationQuery="12345" isLoggedIn={false} />);
 
     expect(screen.getByText('Visible System')).toBeInTheDocument();
-    expect(screen.queryByText('Silent System')).not.toBeInTheDocument();
     expect(screen.getByText('Control-Channel-Only Systems')).toBeInTheDocument();
     expect(screen.getByText('Systems Shown')).toBeInTheDocument();
     expect(screen.getByText((_, node) => node?.textContent === '1/2')).toBeInTheDocument();
     expect(screen.getByText((_, node) => node?.textContent?.replace(/\s+/g, ' ').trim() === '1 control-only collapsed')).toBeInTheDocument();
+    expect(screen.getByText('Silent System')).toBeInTheDocument();
+    expect(screen.getByText('452.1250')).toBeInTheDocument();
+    expect(screen.getByText(/Control and site frequencies stay visible here/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /control-channel-only systems/i }));
 
-    expect(screen.getByText('Silent System')).toBeInTheDocument();
+    expect(screen.getAllByText('Silent System')).toHaveLength(2);
   });
 });
