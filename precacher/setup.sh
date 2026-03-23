@@ -7,7 +7,7 @@
 set -e
 
 INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
-SERVICE_NAME="precacher"
+SERVICE_BASE="precacher"
 
 echo "═══════════════════════════════════════════════════════"
 echo "  BOY & A SCANNER — PRE-CACHER SETUP"
@@ -89,18 +89,38 @@ if [[ -z "$GITHUB_TOKEN" || "$GITHUB_TOKEN" == "your_github_token_here" ]]; then
 fi
 
 echo ""
-echo "▸ Creating systemd service..."
+echo "▸ Creating split systemd services..."
 
-sudo tee /etc/systemd/system/${SERVICE_NAME}.service > /dev/null <<EOF
+sudo tee /etc/systemd/system/${SERVICE_BASE}-cache.service > /dev/null <<EOF
 [Unit]
-Description=Boy & A Scanner Pre-Cacher
+Description=Boy & A Scanner Cache Warmer
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/node ${INSTALL_DIR}/precacher.mjs
+ExecStart=/usr/bin/node ${INSTALL_DIR}/precacher.mjs --cache-only
+EnvironmentFile=${INSTALL_DIR}/.env
+User=$(whoami)
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=7200
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee /etc/systemd/system/${SERVICE_BASE}-seo.service > /dev/null <<EOF
+[Unit]
+Description=Boy & A Scanner SEO Publisher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=${INSTALL_DIR}
+ExecStart=/usr/bin/node ${INSTALL_DIR}/precacher.mjs --seo-only
 EnvironmentFile=${INSTALL_DIR}/.env
 User=$(whoami)
 StandardOutput=journal
@@ -113,11 +133,11 @@ EOF
 
 # ─── Step 5: Create systemd timer ─────────────────────────
 
-echo "▸ Creating systemd timer (runs daily at 3 AM UTC)..."
+echo "▸ Creating split systemd timers (cache at 3 AM UTC, SEO at 3:30 AM UTC)..."
 
-sudo tee /etc/systemd/system/${SERVICE_NAME}.timer > /dev/null <<EOF
+sudo tee /etc/systemd/system/${SERVICE_BASE}-cache.timer > /dev/null <<EOF
 [Unit]
-Description=Run Pre-Cacher daily
+Description=Run Boy & A Scanner cache warmer daily
 
 [Timer]
 OnCalendar=*-*-* 03:00:00
@@ -128,22 +148,40 @@ RandomizedDelaySec=600
 WantedBy=timers.target
 EOF
 
+sudo tee /etc/systemd/system/${SERVICE_BASE}-seo.timer > /dev/null <<EOF
+[Unit]
+Description=Run Boy & A Scanner SEO publisher daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target
+EOF
+
 # ─── Step 6: Enable and start ─────────────────────────────
 
-echo "▸ Enabling systemd timer..."
+echo "▸ Enabling split systemd timers..."
 sudo systemctl daemon-reload
-sudo systemctl enable ${SERVICE_NAME}.timer
+sudo systemctl disable --now ${SERVICE_BASE}.timer 2>/dev/null || true
+sudo systemctl enable ${SERVICE_BASE}-cache.timer
+sudo systemctl enable ${SERVICE_BASE}-seo.timer
 
 echo ""
 echo "═══════════════════════════════════════════════════════"
 echo "  ✅ SETUP COMPLETE!"
 echo ""
 echo "  Commands:"
-echo "    Start timer now:     sudo systemctl start precacher.timer"
+echo "    Start cache timer:   sudo systemctl start precacher-cache.timer"
+echo "    Start SEO timer:     sudo systemctl start precacher-seo.timer"
 echo "    Run once manually:   node precacher.mjs --test"
+echo "    Run cache only:      node precacher.mjs --cache-only"
 echo "    Run full manually:   node precacher.mjs"
 echo "    SEO only:            node precacher.mjs --seo-only"
-echo "    Check timer status:  systemctl status precacher.timer"
-echo "    View logs:           journalctl -u precacher.service -f"
-echo "    Stop timer:          sudo systemctl stop precacher.timer"
+echo "    Check timers:        systemctl status precacher-cache.timer precacher-seo.timer"
+echo "    View cache logs:     journalctl -u precacher-cache.service -f"
+echo "    View SEO logs:       journalctl -u precacher-seo.service -f"
+echo "    Stop timers:         sudo systemctl stop precacher-cache.timer precacher-seo.timer"
 echo "═══════════════════════════════════════════════════════"

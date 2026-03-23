@@ -29,7 +29,12 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
 const DELAY_MS = (parseInt(process.env.DELAY_SECONDS) || 5) * 1000;
-const MAX_AGE_MS = (parseInt(process.env.MAX_AGE_HOURS) || 24) * 60 * 60 * 1000;
+const HOT_MAX_AGE_MS = (parseInt(process.env.HOT_MAX_AGE_HOURS) || parseInt(process.env.MAX_AGE_HOURS) || 24) * 60 * 60 * 1000;
+const WARM_MAX_AGE_MS = (parseInt(process.env.WARM_MAX_AGE_HOURS) || 168) * 60 * 60 * 1000;
+const MAX_SEED_ZIPS = parseInt(process.env.MAX_SEED_ZIPS) || 150;
+const MAX_RECENT_SEARCH_ZIPS = parseInt(process.env.MAX_RECENT_SEARCH_ZIPS) || 125;
+const MAX_FAVORITE_ZIPS = parseInt(process.env.MAX_FAVORITE_ZIPS) || 75;
+const MAX_REPORT_ZIPS = parseInt(process.env.MAX_REPORT_ZIPS) || 75;
 const MODEL_NAME = 'gemini-2.0-flash';
 const SERVICE_TYPES = [
     'Police', 'Fire', 'EMS', 'Ham Radio', 'Railroad', 'Air', 'Marine',
@@ -45,6 +50,7 @@ const SEO_BUILD_DIR = join(__dirname, '.seo-build');    // temp dir, cleaned eac
 
 const IS_TEST = process.argv.includes('--test');
 const IS_SEO_ONLY = process.argv.includes('--seo-only');
+const IS_CACHE_ONLY = process.argv.includes('--cache-only');
 
 // ─── Validate ─────────────────────────────────────────────────────────────────
 
@@ -52,38 +58,176 @@ if (!GEMINI_API_KEY || !SUPABASE_URL || !SUPABASE_KEY) {
     console.error('❌ Missing env vars. Copy .env.example to .env and fill in your credentials.');
     process.exit(1);
 }
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function normalizeZip(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return /^\d{5}$/.test(trimmed) ? trimmed : null;
+}
+
+function extractZipFromSearchKey(searchKey) {
+    if (typeof searchKey !== 'string') return null;
+    const match = searchKey.match(/^v6_loc_(\d{5})$/i);
+    return match ? match[1] : null;
+}
+
+function addZipSignal(map, zip, priority, reason) {
+    if (!zip) return;
+
+    const existing = map.get(zip);
+    if (!existing) {
+        map.set(zip, { zip, priority, reasons: [reason] });
+        return;
+    }
+
+    if (priority === 'hot' && existing.priority !== 'hot') {
+        existing.priority = 'hot';
+    }
+    if (!existing.reasons.includes(reason)) {
+        existing.reasons.push(reason);
+    }
+}
+
+function describePlan(plan) {
+    const hot = plan.filter(item => item.priority === 'hot').length;
+    const warm = plan.length - hot;
+    return { hot, warm, total: plan.length };
+}
+
+function countReasons(plan) {
+    const counts = {};
+    for (const item of plan) {
+        for (const reason of item.reasons) {
+            counts[reason] = (counts[reason] || 0) + 1;
+        }
+    }
+    return counts;
+}
+
+function createPriorityStats() {
+    return {
+        hot: { cached: 0, skipped: 0, failed: 0 },
+        warm: { cached: 0, skipped: 0, failed: 0 },
+    };
+}
+
+function logPrioritySummary(priorityStats) {
+    console.log('  RESULTS BY PRIORITY');
+    for (const priority of ['hot', 'warm']) {
+        const stats = priorityStats[priority];
+        console.log(`  ${priority.padEnd(4)} cached=${stats.cached} skipped=${stats.skipped} failed=${stats.failed}`);
+    }
+}
 
 // ─── Dynamic ZIP Discovery ──────────────────────────────────────────────────
 
 /**
- * Pulls every ZIP code that users have ever searched from the search_cache table.
- * Keys are stored as "v6_loc_XXXXX" — we extract the 5-digit ZIP from each.
+ * Pull recent ZIP code searches from the cache table.
+ * This uses recency as a proxy for demand instead of expanding forever.
  */
-async function getSearchedZips() {
+async function getRecentSearchedZips(limit = MAX_RECENT_SEARCH_ZIPS) {
     try {
-        // Fetch all keys that look like a ZIP-based search (v6_loc_#####)
         const { data, error } = await supabase
             .from('search_cache')
-            .select('search_key')
-            .like('search_key', 'v6_loc_%');
+            .select('search_key, updated_at')
+            .like('search_key', 'v6_loc_%')
+            .order('updated_at', { ascending: false })
+            .limit(limit * 4);
 
         if (error || !data) return [];
 
         const zips = [];
         for (const row of data) {
-            // Extract the part after 'v6_loc_'
-            const suffix = row.search_key.replace(/^v6_loc_/, '');
-            // Only keep pure 5-digit ZIP codes (ignore city,state searches)
-            if (/^\d{5}$/.test(suffix)) {
-                zips.push(suffix);
+            const zip = extractZipFromSearchKey(row.search_key);
+            if (zip && !zips.includes(zip)) {
+                zips.push(zip);
+            }
+            if (zips.length >= limit) {
+                break;
             }
         }
         return zips;
     } catch (e) {
-        console.warn('⚠️  Could not fetch searched ZIPs from Supabase:', e.message);
+        console.warn('⚠️  Could not fetch recent ZIP searches from Supabase:', e.message);
         return [];
     }
+}
+
+async function getFavoriteZips(limit = MAX_FAVORITE_ZIPS) {
+    try {
+        const { data, error } = await supabase
+            .from('favorites')
+            .select('location_query, created_at')
+            .order('created_at', { ascending: false })
+            .limit(limit * 4);
+
+        if (error || !data) return [];
+
+        const zips = [];
+        for (const row of data) {
+            const zip = normalizeZip(row.location_query);
+            if (zip && !zips.includes(zip)) {
+                zips.push(zip);
+            }
+            if (zips.length >= limit) {
+                break;
+            }
+        }
+        return zips;
+    } catch (e) {
+        console.warn('⚠️  Could not fetch favorite ZIPs from Supabase:', e.message);
+        return [];
+    }
+}
+
+async function getReportedZips(limit = MAX_REPORT_ZIPS) {
+    try {
+        const { data, error } = await supabase
+            .from('frequency_reports')
+            .select('location_query, created_at')
+            .order('created_at', { ascending: false })
+            .limit(limit * 4);
+
+        if (error || !data) return [];
+
+        const zips = [];
+        for (const row of data) {
+            const zip = normalizeZip(row.location_query);
+            if (zip && !zips.includes(zip)) {
+                zips.push(zip);
+            }
+            if (zips.length >= limit) {
+                break;
+            }
+        }
+        return zips;
+    } catch (e) {
+        console.warn('⚠️  Could not fetch community ZIP activity from Supabase:', e.message);
+        return [];
+    }
+}
+
+async function buildZipPlan() {
+    const planMap = new Map();
+
+    ZIPCODES.slice(0, MAX_SEED_ZIPS).forEach(zip => addZipSignal(planMap, normalizeZip(zip), 'warm', 'seed'));
+
+    const [recentSearches, favoriteZips, reportedZips] = await Promise.all([
+        getRecentSearchedZips(),
+        getFavoriteZips(),
+        getReportedZips(),
+    ]);
+
+    recentSearches.forEach(zip => addZipSignal(planMap, zip, 'hot', 'recent-search'));
+    favoriteZips.forEach(zip => addZipSignal(planMap, zip, 'hot', 'favorite'));
+    reportedZips.forEach(zip => addZipSignal(planMap, zip, 'hot', 'community'));
+
+    return [...planMap.values()].sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority === 'hot' ? -1 : 1;
+        return b.reasons.length - a.reasons.length;
+    });
 }
 
 // ─── Cache Helpers ────────────────────────────────────────────────────────────
@@ -92,7 +236,7 @@ function makeCacheKey(zip) {
     return `v6_loc_${zip}`;
 }
 
-async function isFresh(cacheKey) {
+async function isFresh(cacheKey, maxAgeMs) {
     try {
         const { data, error } = await supabase
             .from('search_cache')
@@ -103,7 +247,7 @@ async function isFresh(cacheKey) {
         if (error || !data || !data.updated_at) return false;
 
         const age = Date.now() - new Date(data.updated_at).getTime();
-        return age < MAX_AGE_MS;
+        return age < maxAgeMs;
     } catch {
         return false;
     }
@@ -242,26 +386,38 @@ async function fetchFromGemini(zip) {
 async function run() {
     const startTime = Date.now();
 
-    // Build ZIP list: static seed + ZIPs users have actually searched
-    let zips;
-    if (IS_TEST) {
-        zips = ZIPCODES.slice(0, 3);
+    let zipPlan = [];
+    if (!IS_SEO_ONLY) {
+        if (IS_TEST) {
+            zipPlan = ZIPCODES.slice(0, 3).map(zip => ({ zip, priority: 'hot', reasons: ['test-seed'] }));
+        } else {
+            console.log('  Building ZIP refresh plan from seed, recent searches, favorites, and community activity...');
+            zipPlan = await buildZipPlan();
+        }
+    }
+
+    const planSummary = describePlan(zipPlan);
+    const reasonCounts = countReasons(zipPlan);
+    let modeLabel;
+    if (IS_SEO_ONLY) {
+        modeLabel = 'SEO ONLY';
+    } else if (IS_CACHE_ONLY) {
+        modeLabel = IS_TEST ? 'CACHE ONLY TEST (3 ZIPs)' : `CACHE ONLY (${planSummary.total} ZIPs)`;
+    } else if (IS_TEST) {
+        modeLabel = 'TEST (3 ZIPs, SEO skipped)';
     } else {
-        console.log('  Discovering searched ZIPs from Supabase...');
-        const searchedZips = await getSearchedZips();
-        const combined = [...new Set([...ZIPCODES, ...searchedZips])];
-        const newlyDiscovered = searchedZips.filter(z => !ZIPCODES.includes(z));
-        console.log(`  Static seed: ${ZIPCODES.length} ZIPs`);
-        console.log(`  User-searched: ${searchedZips.length} ZIPs (${newlyDiscovered.length} new beyond seed)`);
-        zips = combined;
+        modeLabel = `FULL (${planSummary.total} ZIPs + SEO)`;
     }
 
     console.log('═══════════════════════════════════════════════════════════');
     console.log('  BOY & A SCANNER — PRE-CACHER + SEO GENERATOR');
-    console.log(`  Mode: ${IS_SEO_ONLY ? 'SEO ONLY' : IS_TEST ? 'TEST (3 ZIPs, SEO skipped)' : `FULL (${zips.length} ZIPs + SEO)`}`);
+    console.log(`  Mode: ${modeLabel}`);
     if (!IS_SEO_ONLY) {
         console.log(`  Delay: ${DELAY_MS / 1000}s between calls`);
-        console.log(`  Max age: ${MAX_AGE_MS / 3600000}h`);
+        console.log(`  Hot ZIP max age: ${HOT_MAX_AGE_MS / 3600000}h`);
+        console.log(`  Warm ZIP max age: ${WARM_MAX_AGE_MS / 3600000}h`);
+        console.log(`  ZIP plan: ${planSummary.hot} hot, ${planSummary.warm} warm`);
+        console.log(`  ZIP signals: ${Object.entries(reasonCounts).map(([reason, count]) => `${reason}=${count}`).join(', ') || 'none'}`);
     }
     console.log(`  Started: ${new Date().toISOString()}`);
     console.log('═══════════════════════════════════════════════════════════');
@@ -271,26 +427,29 @@ async function run() {
     let cached = 0;
     let skipped = 0;
     let failed = 0;
+    const priorityStats = createPriorityStats();
 
     if (!IS_SEO_ONLY) {
         console.log('');
         console.log('  PHASE 1 — PRE-CACHE');
         console.log('───────────────────────────────────────────────────────────');
 
-        for (let i = 0; i < zips.length; i++) {
-            const zip = zips[i];
+        for (let i = 0; i < zipPlan.length; i++) {
+            const { zip, priority, reasons } = zipPlan[i];
             const cacheKey = makeCacheKey(zip);
-            const progress = `[${i + 1}/${zips.length}]`;
+            const progress = `[${i + 1}/${zipPlan.length}]`;
+            const maxAgeMs = priority === 'hot' ? HOT_MAX_AGE_MS : WARM_MAX_AGE_MS;
+            const reasonLabel = reasons.join(',');
 
-            // Check if already fresh
-            const fresh = await isFresh(cacheKey);
+            const fresh = await isFresh(cacheKey, maxAgeMs);
             if (fresh) {
-                console.log(`${progress} ${zip} — SKIP (already fresh)`);
+                console.log(`${progress} ${zip} — SKIP (${priority}, ${reasonLabel}, fresh)`);
                 skipped++;
+                priorityStats[priority].skipped++;
                 continue;
             }
 
-            console.log(`${progress} ${zip} — fetching from Gemini...`);
+            console.log(`${progress} ${zip} — fetching from Gemini... (${priority}, ${reasonLabel})`);
 
             try {
                 const { data, groundingChunks } = await fetchFromGemini(zip);
@@ -302,16 +461,20 @@ async function run() {
                         const trsCount = data.trunkedSystems?.length || 0;
                         console.log(`   └─ ✅ Cached: ${data.locationName || zip} (${agencyCount} agencies, ${trsCount} trunked)`);
                         cached++;
+                        priorityStats[priority].cached++;
                     } else {
                         failed++;
+                        priorityStats[priority].failed++;
                     }
                 } else {
                     console.log(`   └─ ⚠️  No data returned for ${zip}`);
                     failed++;
+                    priorityStats[priority].failed++;
                 }
             } catch (err) {
                 console.error(`   └─ ❌ Error: ${err.message}`);
                 failed++;
+                priorityStats[priority].failed++;
 
                 // If rate limited, wait longer
                 if (err.message?.includes('429') || err.message?.includes('RATE')) {
@@ -321,7 +484,7 @@ async function run() {
             }
 
             // Delay between calls
-            if (i < zips.length - 1) {
+            if (i < zipPlan.length - 1) {
                 await sleep(DELAY_MS);
             }
         }
@@ -332,12 +495,13 @@ async function run() {
         console.log(`  ✅ Cached:  ${cached}`);
         console.log(`  ⏭️  Skipped: ${skipped}`);
         console.log(`  ❌ Failed:  ${failed}`);
+        logPrioritySummary(priorityStats);
         console.log(`  ⏱️  Elapsed: ${elapsed1}s`);
     }
 
     // ── Phase 2: SEO Page Generation ───────────────────────────────────────
 
-    if (!IS_TEST) {
+    if (!IS_TEST && !IS_CACHE_ONLY) {
         console.log('');
         console.log('  PHASE 2 — SEO PAGE GENERATION');
         console.log('───────────────────────────────────────────────────────────');
@@ -354,6 +518,9 @@ async function run() {
                 console.log('  ⏭️  SEO pages unchanged — nothing to push');
             } else {
                 console.log(`  ✅ SEO: ${seoResult.pushed} pages published`);
+            }
+            if (!seoResult.skipped) {
+                console.log(`  📄 SEO input ZIP entries: ${entries.length}`);
             }
         } else {
             console.log('  ⚠️  No cached entries found — nothing to generate');
@@ -392,7 +559,7 @@ async function fetchAllCachedEntries() {
         }
         if (!data || data.length === 0) break;
 
-        allRows = allRows.concat(data);
+        allRows = allRows.concat(data.filter(row => !!extractZipFromSearchKey(row.search_key)));
         if (data.length < PAGE_SIZE) break;
         from += PAGE_SIZE;
     }

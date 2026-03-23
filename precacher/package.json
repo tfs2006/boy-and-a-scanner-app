@@ -6,6 +6,7 @@
     "scripts": {
         "start": "node precacher.mjs",
         "test": "node precacher.mjs --test",
+        "cache-only": "node precacher.mjs --cache-only",
         "seo-only": "node precacher.mjs --seo-only"
     },
     "dependencies": {

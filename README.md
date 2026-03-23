@@ -18,13 +18,14 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 
 ## Features
 
-### 4 App Modes
+### 5 App Modes
 | Mode | Description |
 |------|-------------|
 | **LOCAL** | Search a single location by ZIP, city name, or current GPS coordinates |
 | **TRIP** | Enter origin + destination — AI maps 3–5 scan zones along your route |
 | **EXPLORE** | Interactive US map of all cloud-cached locations; tap any marker to browse frequencies instantly |
 | **RANKS** | Community leaderboard — earn points by confirming active frequencies with "Heard It" |
+| **COMMUNITY** | ScannerSphere hub with forum posts, events calendar, and tutorials |
 
 ### Hybrid Data Sources
 - **RadioReference SOAP API** — Authoritative verified data for ZIP code lookups (requires RR Premium account)
@@ -73,7 +74,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 | Maps | Leaflet + react-leaflet (CartoDB dark / OpenStreetMap tiles) |
 | Export | jsPDF, jszip, custom CSV and Sentinel formatters |
 | Deployment | Vercel — frontend + serverless API functions |
-| Pre-cacher | Oracle Cloud Free Tier Ubuntu VM (Node.js, daily cron) |
+| Pre-cacher | Oracle Cloud Free Tier Ubuntu VM (Node.js, split cache/SEO timers via systemd) |
 
 ---
 
@@ -116,10 +117,10 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 │   ├── sds100/              # SDS100 scaffold core (types/validation/renderer/builder)
 │   ├── pdfGenerator.ts      # Trip PDF via jsPDF
 │   └── manualGenerator.ts   # SDS100/200 programming manual generator
-├── precacher/             # Oracle VM pre-cache script
-│   ├── precacher.mjs        # Daily cron — populates cache for popular ZIPs
+├── precacher/             # Oracle VM cache warmer + SEO publisher
+│   ├── precacher.mjs        # Cache warmer + SEO publisher for the Oracle VM
 │   ├── zipcodes.json        # List of popular US ZIPs to pre-cache
-│   └── setup.sh             # Installs Node 20 + systemd timer on Ubuntu VM
+│   └── setup.sh             # Installs Node 20 + split systemd timers on Ubuntu VM
 ├── supabase/
 │   └── crowdsource_schema.sql  # Table definitions and RLS policies
 ├── types.ts               # All shared TypeScript interfaces
@@ -214,16 +215,28 @@ The app deploys to [Vercel](https://vercel.com). The `api/` folder is automatica
 
 1. Connect your GitHub repo to a Vercel project
 2. Add all environment variables in the Vercel project settings
-3. Push to deploy — `vercel.json` is included with the correct framework config
+3. Push to GitHub to deploy — `vercel.json` is included with the correct framework config
+4. Vercel production builds run `npm run build:ci`, which runs the smoke suite before building
 
 ---
 
 ## Pre-cacher (Oracle Cloud VM)
 
-The `precacher/` folder contains a standalone Node.js script that pre-populates the Supabase cache with results for popular US ZIP codes so users get instant cached responses.
+The `precacher/` folder contains a standalone Node.js script that does two jobs:
+
+- **Cache warmer** — refreshes high-value ZIP searches into Supabase so users get faster cached responses
+- **SEO publisher** — renders ZIP landing pages from cached entries and pushes them to the SEO repo
+
+Current cache-warming strategy:
+
+- **Hot ZIPs** — ZIPs discovered from recent searches, user favorites, and community frequency activity
+- **Warm ZIPs** — seed coverage ZIPs from `precacher/zipcodes.json`
+- **Different refresh windows** — hot ZIPs refresh more aggressively than warm ZIPs
+- **ZIP-only SEO pages** — the SEO publisher generates pages only from ZIP cache entries (`v6_loc_#####`)
+- **Independent execution** — cache warming and SEO publishing run on separate timers so one can succeed without the other
 
 - **Script:** `precacher/precacher.mjs`
-- **Schedule:** Daily at 3 AM UTC via systemd timer (configured by `precacher/setup.sh`)
+- **Schedule:** Cache timer daily at 3:00 AM UTC, SEO timer daily at 3:30 AM UTC (configured by `precacher/setup.sh`)
 - **ZIP list:** `precacher/zipcodes.json`
 
 To deploy/update the precacher:
@@ -232,7 +245,38 @@ scp precacher/precacher.mjs oracle:~/boy-and-a-scanner-app/precacher/
 ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs"
 ```
 
-The precacher needs its own `.env` containing `GEMINI_API_KEY`, `VITE_SUPABASE_URL`, and `VITE_SUPABASE_ANON_KEY`.
+Manual modes:
+```bash
+ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --cache-only"
+ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --seo-only"
+ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --test"
+```
+
+The precacher needs its own `.env` containing `GEMINI_API_KEY`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY`.
+
+Important precacher env vars:
+
+| Variable | Purpose |
+|----------|---------|
+| `GEMINI_API_KEY` | Gemini API key used by the Oracle worker |
+| `SUPABASE_URL` | Supabase project URL |
+| `SUPABASE_ANON_KEY` | Supabase anon key for cache read/write |
+| `DELAY_SECONDS` | Delay between Gemini requests |
+| `HOT_MAX_AGE_HOURS` | Refresh window for high-value ZIPs |
+| `WARM_MAX_AGE_HOURS` | Refresh window for seed ZIPs |
+| `MAX_SEED_ZIPS` | Max seed ZIPs included in each run |
+| `MAX_RECENT_SEARCH_ZIPS` | Max recent searched ZIPs included in each run |
+| `MAX_FAVORITE_ZIPS` | Max favorite ZIPs included in each run |
+| `MAX_REPORT_ZIPS` | Max ZIPs pulled from community activity |
+| `GITHUB_TOKEN` | GitHub PAT used for SEO repo publishing |
+| `GITHUB_REPO` | SEO repo target such as `user/repo` |
+| `SEO_SITE_URL` | Canonical site URL used in generated SEO pages |
+
+Operational notes:
+
+- Cache runs now report ZIP plan composition and hot/warm cache results directly in the logs
+- SEO runs report how many ZIP entries were used as input and how many pages were published
+- The legacy combined `precacher.timer` is replaced by `precacher-cache.timer` and `precacher-seo.timer`
 
 ---
 
@@ -251,6 +295,14 @@ The precacher needs its own `.env` containing `GEMINI_API_KEY`, `VITE_SUPABASE_U
 ---
 
 ## Changelog
+
+### March 22, 2026 — Precacher Overhaul
+- Fixed the Oracle worker bug where the Gemini client was never initialized (`ai is not defined`)
+- Reworked cache warming to prioritize recent searches, favorites, and community activity over blanket stale refreshes
+- Added separate `--cache-only` and `--seo-only` execution modes to `precacher.mjs`
+- Split Oracle systemd scheduling into `precacher-cache.timer` and `precacher-seo.timer`
+- Restricted SEO generation to ZIP cache entries only so the SEO directory mirrors the intended ZIP landing page strategy
+- Added per-run reporting for ZIP plan composition and hot/warm cache outcomes
 
 ### March 20, 2026 — ScannerSphere Community Hub
 - Added **COMMUNITY** mode (5th nav tab) — lazy-loaded, available on desktop nav, mobile hamburger, and mobile bottom tab bar
