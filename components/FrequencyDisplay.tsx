@@ -164,6 +164,7 @@ interface FrequencyDisplayProps {
   data: ScanResult;
   locationQuery?: string;
   isLoggedIn?: boolean;
+  onStatus?: (notice: { tone: 'success' | 'warning'; message: string; detail?: string }) => void;
 }
 
 interface AgencyCardProps {
@@ -415,6 +416,14 @@ const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
     tgFilter === 'all' ? talkgroups : talkgroups.filter(tg => tg.tagType === tgFilter),
   [talkgroups, tgFilter]);
 
+  const emptyMessage = tgFilter !== 'all'
+    ? `No talkgroups match the ${TG_FILTER_OPTIONS.find((option) => option.key === tgFilter)?.label?.toLowerCase() || 'selected'} channel filter.`
+    : 'No talkgroups are available for this system in the current result set.';
+
+  const emptyDetail = talkgroups.length === 0
+    ? 'System frequencies above may still be useful for scanning or manual programming.'
+    : 'Try another channel type or reset the talkgroup filter.';
+
   return (
     <div className="bg-slate-800/50 border border-slate-700 rounded-lg overflow-hidden mb-6 shadow-lg backdrop-blur-sm">
       <div className="p-4 bg-gradient-to-r from-slate-800 to-slate-900 border-b border-slate-700 flex flex-col gap-4">
@@ -493,7 +502,7 @@ const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700/50">
-            {filteredTGs.map((tg, idx) => (
+            {filteredTGs.length > 0 ? filteredTGs.map((tg, idx) => (
               <React.Fragment key={idx}>
                 {/* Desktop Row */}
                 <tr className="hidden md:table-row hover:bg-slate-700/30 transition-colors">
@@ -535,7 +544,16 @@ const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
                   </td>
                 </tr>
               </React.Fragment>
-            ))}
+            )) : (
+              <tr>
+                <td colSpan={5} className="px-4 py-6">
+                  <div className="rounded-lg border border-dashed border-slate-700 bg-slate-900/40 px-4 py-5 text-center">
+                    <div className="text-sm font-mono-tech text-slate-300">{emptyMessage}</div>
+                    <div className="mt-1 text-xs text-slate-500">{emptyDetail}</div>
+                  </div>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -543,7 +561,7 @@ const TrunkedSystemCard: React.FC<{ system: TrunkedSystem }> = ({ system }) => {
   );
 };
 
-export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locationQuery = '', isLoggedIn = false }) => {
+export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locationQuery = '', isLoggedIn = false, onStatus }) => {
   // Defensive checks: Ensure arrays exist
   const agencies = data.agencies || [];
   const systems = data.trunkedSystems || [];
@@ -702,8 +720,20 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
 
   const handleSmartExport = useCallback(async (minConfirmations: number) => {
     const { generateSmartCSV } = await import('../utils/csvGenerator');
-    generateSmartCSV(data, counts, minConfirmations);
-  }, [data, counts]);
+    const result = generateSmartCSV(data, counts, minConfirmations);
+    if (!onStatus) return;
+
+    if (result.ok) {
+      onStatus({
+        tone: 'success',
+        message: `Smart export ready: ${result.count} confirmed frequencies.`,
+        detail: `Downloaded ${result.filename}.`,
+      });
+      return;
+    }
+
+    onStatus({ tone: 'warning', message: result.message });
+  }, [data, counts, onStatus]);
 
   return (
     <div className="space-y-8 animate-fade-in">

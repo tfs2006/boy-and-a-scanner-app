@@ -61,6 +61,12 @@ const SectionLoader = ({ label = 'Loading module...' }: { label?: string }) => (
   </div>
 );
 
+type StatusNotice = {
+  tone: 'success' | 'error' | 'warning' | 'info';
+  message: string;
+  detail?: string;
+};
+
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -79,6 +85,7 @@ function App() {
   const [grounding, setGrounding] = useState<SearchResponse['groundingChunks']>(null);
   const [error, setError] = useState<string | null>(null);
   const [rrWarning, setRrWarning] = useState<string | null>(null);
+  const [statusNotice, setStatusNotice] = useState<StatusNotice | null>(null);
   const [showManual, setShowManual] = useState(false);
 
   // Favorites
@@ -150,6 +157,12 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (!statusNotice) return;
+    const timeoutId = window.setTimeout(() => setStatusNotice(null), 4500);
+    return () => window.clearTimeout(timeoutId);
+  }, [statusNotice]);
 
   // URL param: auto-search when arriving from SEO frequency pages (?q=ZIP)
   const pendingUrlQuery = useRef<string | null>(
@@ -536,18 +549,27 @@ function App() {
     setError(null);
   };
 
-  const handleSentinelCopy = (data: ScanResult) => {
+  const pushStatusNotice = (notice: StatusNotice) => {
+    setStatusNotice(notice);
+  };
+
+  const handleSentinelCopy = async (data: ScanResult) => {
     const text = generateSentinelExport(data);
     if (!text) {
-      alert("No conventional frequencies to export.");
+      pushStatusNotice({ tone: 'warning', message: 'No conventional frequencies to export.' });
       return;
     }
-    navigator.clipboard.writeText(text).then(() => {
-      alert("Copied to Clipboard! \n\nOpen Uniden Sentinel -> Right Click 'Department' -> Paste.");
-    }).catch(err => {
+    try {
+      await navigator.clipboard.writeText(text);
+      pushStatusNotice({
+        tone: 'success',
+        message: 'Sentinel data copied to the clipboard.',
+        detail: "Open Uniden Sentinel, right-click a Department, then choose Paste.",
+      });
+    } catch (err) {
       console.error("Clipboard failed:", err);
-      alert("Failed to copy to clipboard.");
-    });
+      pushStatusNotice({ tone: 'error', message: 'Failed to copy Sentinel data to the clipboard.' });
+    }
   };
 
   const handleCsvExport = async (data: ScanResult) => {
@@ -557,7 +579,17 @@ function App() {
 
   const handleChirpExport = async (data: ScanResult) => {
     const { exportChirpCSV } = await import('./utils/chirpExporter');
-    exportChirpCSV(data);
+    const result = exportChirpCSV(data);
+    if (result.ok) {
+      pushStatusNotice({
+        tone: 'success',
+        message: `CHIRP export ready: ${result.count} channels.`,
+        detail: `Downloaded ${result.filename}.`,
+      });
+      return;
+    }
+
+    pushStatusNotice({ tone: 'warning', message: result.message });
   };
 
   const openSds100Modal = (data: ScanResult) => {
@@ -586,9 +618,14 @@ function App() {
       const { exportSentinelZip } = await import('./utils/sentinelExporter');
       await exportSentinelZip(data, Array.from(sds100Filters));
       setShowSds100Modal(false);
+      pushStatusNotice({
+        tone: 'success',
+        message: 'SDS100 package generated.',
+        detail: 'Check your downloads for the Sentinel ZIP package.',
+      });
     } catch (err) {
       console.error('SDS100 export failed:', err);
-      alert('Failed to generate SDS100 package. Please try again.');
+      pushStatusNotice({ tone: 'error', message: 'Failed to generate the SDS100 package. Please try again.' });
     }
   };
 
@@ -1372,6 +1409,27 @@ function App() {
                   </div>
                 )
               }
+              {
+                statusNotice && (
+                  <div className={`max-w-2xl mx-auto mt-4 p-3 border rounded text-sm font-mono-tech flex items-start gap-3 ${statusNotice.tone === 'success'
+                    ? 'bg-emerald-900/20 border-emerald-700/50 text-emerald-300'
+                    : statusNotice.tone === 'error'
+                      ? 'bg-red-900/20 border-red-700/50 text-red-300'
+                      : statusNotice.tone === 'warning'
+                        ? 'bg-amber-900/20 border-amber-700/50 text-amber-300'
+                        : 'bg-cyan-900/20 border-cyan-700/50 text-cyan-300'
+                    }`}>
+                    {statusNotice.tone === 'success'
+                      ? <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+                      : <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />}
+                    <div className="flex-1">
+                      <div>{statusNotice.message}</div>
+                      {statusNotice.detail && <div className="mt-1 text-xs opacity-80">{statusNotice.detail}</div>}
+                    </div>
+                    <button onClick={() => setStatusNotice(null)} className="opacity-70 hover:opacity-100 shrink-0" title="Dismiss">✕</button>
+                  </div>
+                )
+              }
             </div>
 
             {/* Loading State */}
@@ -1524,6 +1582,7 @@ function App() {
                     data={result}
                     locationQuery={searchQuery}
                     isLoggedIn={!!session}
+                      onStatus={pushStatusNotice}
                   />
 
                   {grounding && grounding.length > 0 && (

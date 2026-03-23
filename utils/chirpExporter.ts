@@ -8,6 +8,10 @@
 
 import { ScanResult, Agency } from '../types';
 
+export type ExportResult =
+  | { ok: true; filename: string; count: number }
+  | { ok: false; message: string };
+
 const CHIRP_HEADER =
   'Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,Mode,TStep,Skip,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE';
 
@@ -41,7 +45,7 @@ function agencyShortName(name: string): string {
   return abbrev;
 }
 
-export function exportChirpCSV(data: ScanResult): void {
+export function exportChirpCSV(data: ScanResult): ExportResult {
   const rows: string[] = [CHIRP_HEADER];
   let location = 0;
 
@@ -83,18 +87,20 @@ export function exportChirpCSV(data: ScanResult): void {
   }
 
   if (location === 0) {
-    alert('No frequencies to export in CHIRP format.');
-    return;
+    return { ok: false, message: 'No frequencies to export in CHIRP format.' };
   }
 
   const csv = rows.join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
+  const filename = `${data.locationName.replace(/[^a-z0-9]/gi, '_')}_chirp.csv`;
   a.href = url;
-  a.download = `${data.locationName.replace(/[^a-z0-9]/gi, '_')}_chirp.csv`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+
+  return { ok: true, filename, count: location };
 }

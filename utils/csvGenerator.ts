@@ -1,6 +1,10 @@
 
 import { ScanResult, TripResult } from '../types';
 
+export type SmartExportResult =
+  | { ok: true; filename: string; count: number }
+  | { ok: false; message: string };
+
 /**
  * Standard CSV Headers compatible with generic import tools
  */
@@ -154,7 +158,7 @@ export const generateSmartCSV = (
   data: ScanResult,
   counts: Map<string, { count: number; last_heard: string | null }>,
   minConfirmations: number = 1
-) => {
+): SmartExportResult => {
   const filteredAgencies = data.agencies
     .map(agency => ({
       ...agency,
@@ -163,8 +167,10 @@ export const generateSmartCSV = (
     .filter(a => a.frequencies.length > 0);
 
   if (filteredAgencies.length === 0) {
-    alert(`No frequencies found with ${minConfirmations}+ community confirmation${minConfirmations !== 1 ? 's' : ''}.\n\nTry lowering the threshold or use the regular CSV export.`);
-    return;
+    return {
+      ok: false,
+      message: `No frequencies found with ${minConfirmations}+ community confirmation${minConfirmations !== 1 ? 's' : ''}. Try lowering the threshold or use the regular CSV export.`,
+    };
   }
 
   const filteredData: ScanResult = {
@@ -185,4 +191,5 @@ export const generateSmartCSV = (
 
   const filename = `SmartExport_${data.locationName}_min${minConfirmations}conf.csv`.replace(/\s+/g, '_');
   downloadCsv(csvContent, filename);
+  return { ok: true, filename, count: totalFreqs };
 };
