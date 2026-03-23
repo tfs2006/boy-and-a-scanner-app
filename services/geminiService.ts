@@ -3,6 +3,7 @@ import { SearchResponse, ScanResult, TripResult, ServiceType } from "../types";
 import { sanitizeForPrompt } from "../utils/security";
 import { supabase } from "./supabaseClient";
 import { fetchFromRadioReference, RRCredentials } from "./rrApi";
+import { createLocationCacheKeys, resolveLocationDetails } from "./locationService";
 
 const debugLog = (...args: unknown[]) => {
   if (import.meta.env.DEV) {
@@ -23,7 +24,7 @@ async function getFromCache(key: string, rrCredentials?: RRCredentials): Promise
 
     if (error || !data) return null;
 
-    const result = data.result_data;
+    const result = data.result_data ? JSON.parse(JSON.stringify(data.result_data)) : null;
 
     // --- QUALITY CHECK (King of the Hill) ---
     // If cache is AI-sourced (Silver) but user has RR Creds (Gold), ignore cache to fetch fresh Gold data.
@@ -80,6 +81,16 @@ async function getFromCache(key: string, rrCredentials?: RRCredentials): Promise
     console.warn("Cache fetch error:", e);
     return null;
   }
+}
+
+async function getFromCacheCandidates(keys: string[], rrCredentials?: RRCredentials) {
+  for (const key of keys) {
+    const cached = await getFromCache(key, rrCredentials);
+    if (cached) {
+      return { ...cached, cacheKey: key };
+    }
+  }
+  return null;
 }
 
 async function saveToCache(key: string, resultData: any, groundingChunks: any) {
@@ -162,21 +173,23 @@ async function fetchJsonWithTimeout(input: RequestInfo | URL, init: RequestInit,
 export const searchFrequencies = async (locationQuery: string, userSelectedServices: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials, signal?: AbortSignal): Promise<SearchResponse> => {
   const safeLocation = sanitizeForPrompt(locationQuery);
 
-  // Cache Key is now strictly LOCATION based.
-  // v6 was the bug fix version.
-  const cacheKey = `v6_loc_${safeLocation}`.toLowerCase().replace(/\s+/g, '');
+  const resolvedLocation = await resolveLocationDetails(safeLocation, signal);
+  const cacheKeys = createLocationCacheKeys(safeLocation, resolvedLocation);
+  const cacheKey = resolvedLocation.canonicalKey;
 
-  const cached = await getFromCache(cacheKey, rrCredentials);
+  const cached = await getFromCacheCandidates(cacheKeys, rrCredentials);
   if (cached) {
-    debugLog(`[Cache Hit] Returning cached result for ${safeLocation}.`);
+    debugLog(`[Cache Hit] Returning cached result for ${safeLocation} via ${cached.cacheKey}.`);
     const filteredData = filterDataByServices(cached.data, userSelectedServices);
     return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: 'Retrieved from Cache' };
   }
 
-  debugLog(`[Hybrid Search] Starting Fresh Search for ${safeLocation}...`);
+  debugLog(`[Hybrid Search] Starting Fresh Search for ${safeLocation} with canonical key ${cacheKey}...`);
 
   let aiGrounding: any = null;
   let rawText = '';
+  const aiLocation = resolvedLocation.searchLabel || resolvedLocation.standardizedName || safeLocation;
+  const rrLookupZip = /^\d{5}$/.test(safeLocation) ? safeLocation : resolvedLocation.primaryZip;
 
   // 1. AI Search (Always run)
   const aiPromise = (async () => {
@@ -186,7 +199,19 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal,
-        body: JSON.stringify({ location: safeLocation, serviceTypes: ALL_SERVICE_TYPES })
+        body: JSON.stringify({
+          location: aiLocation,
+          serviceTypes: ALL_SERVICE_TYPES,
+          locationContext: {
+            query: safeLocation,
+            standardizedName: resolvedLocation.standardizedName,
+            canonicalName: resolvedLocation.canonicalName,
+            city: resolvedLocation.city,
+            county: resolvedLocation.county,
+            stateCode: resolvedLocation.stateCode,
+            primaryZip: resolvedLocation.primaryZip,
+          }
+        })
       }, 'AI Search timed out. Please try again.');
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -213,11 +238,11 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   // 2. RadioReference Search (Run if credentials exist)
   let rrPromise: Promise<ScanResult | null> = Promise.resolve(null);
   let rrErrorMessage: string | undefined;
-  if (rrCredentials && /^\d{5}$/.test(safeLocation)) {
+  if (rrCredentials && rrLookupZip) {
     rrPromise = (async () => {
       try {
-        debugLog(`[RR API] Fetching for ${safeLocation}...`);
-        const data = await fetchFromRadioReference(safeLocation, rrCredentials, ALL_SERVICE_TYPES, signal);
+        debugLog(`[RR API] Fetching for ${rrLookupZip} (resolved from ${safeLocation})...`);
+        const data = await fetchFromRadioReference(rrLookupZip, rrCredentials, ALL_SERVICE_TYPES, signal);
         if (data) {
           data.source = 'API';
           // Mark inner items
@@ -257,7 +282,7 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   } else {
     debugLog(`[Hybrid Search] All fetches failed. Checking Cache as backup...`);
     // Fallback: Check Cache if everything else failed
-    const backupCached = await getFromCache(cacheKey, rrCredentials);
+    const backupCached = await getFromCacheCandidates(cacheKeys, rrCredentials);
     if (backupCached) {
       debugLog(`[Cache Backup] Found data.`);
       // Filter and return immediately

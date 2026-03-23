@@ -33,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { location, serviceTypes } = req.body;
+    const { location, serviceTypes, locationContext } = req.body;
 
     if (!location || !serviceTypes) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -42,12 +42,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Sanitize input
     const safeLocation = String(location).replace(/[^a-zA-Z0-9\s,.-]/g, "").trim().slice(0, 100);
     const safeServices = Array.isArray(serviceTypes) ? serviceTypes.slice(0, 20) : ['Police', 'Fire', 'EMS'];
+    const safeContext = locationContext && typeof locationContext === 'object'
+      ? {
+          query: String(locationContext.query || '').replace(/[^a-zA-Z0-9\s,.-]/g, '').trim().slice(0, 100),
+          standardizedName: String(locationContext.standardizedName || '').replace(/[^a-zA-Z0-9\s,.-]/g, '').trim().slice(0, 100),
+          canonicalName: String(locationContext.canonicalName || '').replace(/[^a-zA-Z0-9\s,.-]/g, '').trim().slice(0, 100),
+          city: String(locationContext.city || '').replace(/[^a-zA-Z0-9\s.-]/g, '').trim().slice(0, 80),
+          county: String(locationContext.county || '').replace(/[^a-zA-Z0-9\s.-]/g, '').trim().slice(0, 80),
+          stateCode: String(locationContext.stateCode || '').replace(/[^A-Za-z]/g, '').trim().slice(0, 2).toUpperCase(),
+          primaryZip: String(locationContext.primaryZip || '').replace(/\D/g, '').trim().slice(0, 5),
+        }
+      : null;
+
+    const contextLines = [
+      safeContext?.query ? `- User query: ${safeContext.query}` : '',
+      safeContext?.standardizedName ? `- Resolved place: ${safeContext.standardizedName}` : '',
+      safeContext?.canonicalName ? `- Canonical coverage area: ${safeContext.canonicalName}` : '',
+      safeContext?.city && safeContext?.stateCode ? `- City: ${safeContext.city}, ${safeContext.stateCode}` : '',
+      safeContext?.county && safeContext?.stateCode ? `- County: ${safeContext.county} County, ${safeContext.stateCode}` : '',
+      safeContext?.primaryZip ? `- Primary ZIP: ${safeContext.primaryZip}` : '',
+    ].filter(Boolean).join('\n');
 
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
     You are an intelligent interface for the RadioReference Database.
     Task: Retrieve the official radio frequency data for Location: "${safeLocation}".
+
+    RESOLVED LOCATION CONTEXT:
+    ${contextLines || '- No extra resolved context available.'}
+    Use the resolved location context above as authoritative. Do not drift to similarly named cities, counties, or states.
     
     CRITICAL: VERIFY THE LOCATION FIRST.
     1. If the input is a ZIP CODE (e.g., "${safeLocation}"), use Google Search to confirm the exact City, County, and STATE.
@@ -97,23 +121,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   `;
 
     let response;
-
-    // Optimization: If location is strictly "City, State", skip Google Search tool to save time (5s vs 15s)
-    // We trust that Gemini internal knowledge is sufficient for major cities.
-    const isStructuredLocation = /^[a-zA-Z\s.-]+,\s*[a-zA-Z]{2}$/.test(safeLocation);
-    const useTools = !isStructuredLocation;
-    let usedTools = useTools;
-
-    if (!useTools) {
-      debugLog(`[Optimization] Skipping Google Search tool for structured location: "${safeLocation}"`);
-    }
+    let usedTools = true;
 
     try {
       response = await withTimeout(ai.models.generateContent({
         model: MODEL_NAME,
         contents: prompt,
         config: {
-          tools: useTools ? [{ googleSearch: {} }] : [],
+          tools: [{ googleSearch: {} }],
         },
       }), MODEL_TIMEOUT_MS, 'AI search timed out');
     } catch (err: any) {

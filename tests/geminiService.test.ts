@@ -73,18 +73,36 @@ describe('geminiService hybrid flows', () => {
     vi.doMock('../services/rrApi', () => ({
       fetchFromRadioReference: vi.fn().mockResolvedValue(structuredClone(rrResult)),
     }));
+    vi.doMock('../services/locationService', () => ({
+      resolveLocationDetails: vi.fn().mockResolvedValue({
+        type: 'city',
+        standardizedName: 'St George, UT',
+        canonicalName: 'Washington County, UT',
+        canonicalKey: 'v7_loc_county_washington_ut',
+        searchLabel: 'St George, UT | Washington County, UT | ZIP 84770',
+        isZip: false,
+        primaryZip: '84770',
+        city: 'St George',
+        county: 'Washington',
+        stateCode: 'UT',
+        zips: ['84770'],
+        aliases: ['St George, UT', 'Washington County, UT', '84770'],
+      }),
+      createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_washington_ut', 'v6_loc_st.george,ut', 'v6_loc_84770']),
+    }));
 
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+    const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         data: structuredClone(aiResult),
         groundingChunks: [{ web: { uri: 'https://example.com', title: 'Example' } }],
         rawText: 'AI Results',
       }),
-    }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const { searchFrequencies } = await import('../services/geminiService');
-    const response = await searchFrequencies('12345', ['Police'], { username: 'demo', password: 'secret' });
+    const response = await searchFrequencies('St. George, UT', ['Police'], { username: 'demo', password: 'secret' });
 
     expect(response.data?.source).toBe('API');
     expect(response.data?.agencies.map((agency) => agency.name)).toEqual(['County Sheriff']);
@@ -98,6 +116,62 @@ describe('geminiService hybrid flows', () => {
     expect(metroDmr?.talkgroups).toHaveLength(1);
     expect(metroDmr?.talkgroups[0].alphaTag).toBe('Police Tac');
     expect(metroDmr?.talkgroups[0].tagType).toBe('tactical');
+
+    const fetchFromRadioReference = (await import('../services/rrApi')).fetchFromRadioReference as unknown as ReturnType<typeof vi.fn>;
+    expect(fetchFromRadioReference).toHaveBeenCalledWith('84770', { username: 'demo', password: 'secret' }, expect.any(Array), undefined);
+    expect(fetchMock).toHaveBeenCalledWith('/api/search', expect.objectContaining({
+      method: 'POST',
+      body: expect.stringContaining('Washington County, UT'),
+    }));
+  });
+
+  it('reuses legacy ZIP cache entries for equivalent city-state searches', async () => {
+    const single = vi.fn((key: string) => Promise.resolve({
+      data: key === 'v6_loc_84770'
+        ? {
+            result_data: structuredClone(aiResult),
+            grounding_chunks: [{ web: { uri: 'https://example.com/cache', title: 'Cache' } }],
+          }
+        : null,
+      error: key === 'v6_loc_84770' ? null : { message: 'Not found' },
+    }));
+    const eq = vi.fn((_: string, key: string) => ({ single: () => single(key) }));
+    const select = vi.fn().mockReturnValue({ eq });
+    const from = vi.fn().mockReturnValue({ select });
+
+    vi.doMock('../services/supabaseClient', () => ({ supabase: { from } }));
+    vi.doMock('../services/rrApi', () => ({
+      fetchFromRadioReference: vi.fn(),
+    }));
+    vi.doMock('../services/locationService', () => ({
+      resolveLocationDetails: vi.fn().mockResolvedValue({
+        type: 'city',
+        standardizedName: 'St George, UT',
+        canonicalName: 'Washington County, UT',
+        canonicalKey: 'v7_loc_county_washington_ut',
+        searchLabel: 'St George, UT | Washington County, UT | ZIP 84770',
+        isZip: false,
+        primaryZip: '84770',
+        city: 'St George',
+        county: 'Washington',
+        stateCode: 'UT',
+        zips: ['84770'],
+        aliases: ['St George, UT', 'Washington County, UT', '84770'],
+      }),
+      createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_washington_ut', 'v6_loc_st.george,ut', 'v6_loc_84770']),
+    }));
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { searchFrequencies } = await import('../services/geminiService');
+    const response = await searchFrequencies('St. George, UT', ['Police']);
+
+    expect(response.data?.source).toBe('Cache');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(single).toHaveBeenCalledWith('v7_loc_county_washington_ut');
+    expect(single).toHaveBeenCalledWith('v6_loc_st.george,ut');
+    expect(single).toHaveBeenCalledWith('v6_loc_84770');
   });
 
   it('filters trip results without mutating the original trip payload', async () => {

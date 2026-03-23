@@ -30,7 +30,8 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 ### Hybrid Data Sources
 - **RadioReference SOAP API** — Authoritative verified data for ZIP code lookups (requires RR Premium account)
 - **Google Gemini 2.0 Flash AI** — Grounded AI search for city, county, and GPS coordinate queries
-- **Cloud Cache** — Supabase-backed cache; repeat searches return instantly without a new AI call
+- **Deterministic Location Resolver** — Normalizes ZIP, city/state, and county/state searches into the same geographic identity before search
+- **Cloud Cache** — Supabase-backed cache keyed by canonical geography so equivalent searches can reuse the same result set
 
 ### Export Ecosystem
 | Export | Description |
@@ -234,6 +235,11 @@ Current cache-warming strategy:
 - **Different refresh windows** — hot ZIPs refresh more aggressively than warm ZIPs
 - **ZIP-only SEO pages** — the SEO publisher generates pages only from ZIP cache entries (`v6_loc_#####`)
 - **Independent execution** — cache warming and SEO publishing run on separate timers so one can succeed without the other
+
+Search behavior notes:
+
+- Text searches now resolve to a canonical location before cache lookup, which lets `84770`, `St. George, UT`, and `Washington County, UT` converge on the same cached geography when they refer to the same area
+- If a text query resolves to a primary ZIP and the user has RadioReference credentials, the app can use that ZIP for a verified RR lookup instead of falling back to AI-only coverage
 
 - **Script:** `precacher/precacher.mjs`
 - **Schedule:** Cache timer daily at 3:00 AM UTC, SEO timer daily at 3:30 AM UTC (configured by `precacher/setup.sh`)

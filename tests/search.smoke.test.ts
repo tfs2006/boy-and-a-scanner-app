@@ -35,6 +35,23 @@ describe('search smoke', () => {
     vi.doMock('../services/rrApi', () => ({
       fetchFromRadioReference: vi.fn(),
     }));
+    vi.doMock('../services/locationService', () => ({
+      resolveLocationDetails: vi.fn().mockResolvedValue({
+        type: 'city',
+        standardizedName: 'Test County, TS',
+        canonicalName: 'Test County, TS',
+        canonicalKey: 'v7_loc_county_test_county_ts',
+        searchLabel: 'Test County, TS',
+        isZip: false,
+        primaryZip: null,
+        city: null,
+        county: 'Test County',
+        stateCode: 'TS',
+        zips: [],
+        aliases: ['Test County, TS'],
+      }),
+      createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_test_county_ts']),
+    }));
 
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
