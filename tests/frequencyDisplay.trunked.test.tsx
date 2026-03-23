@@ -46,6 +46,9 @@ describe('FrequencyDisplay trunked system UX', () => {
     expect(screen.getByText('Visible System')).toBeInTheDocument();
     expect(screen.queryByText('Silent System')).not.toBeInTheDocument();
     expect(screen.getByText('Control-Channel-Only Systems')).toBeInTheDocument();
+    expect(screen.getByText('Systems Shown')).toBeInTheDocument();
+    expect(screen.getByText((_, node) => node?.textContent === '1/2')).toBeInTheDocument();
+    expect(screen.getByText((_, node) => node?.textContent?.replace(/\s+/g, ' ').trim() === '1 control-only collapsed')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /control-channel-only systems/i }));
 

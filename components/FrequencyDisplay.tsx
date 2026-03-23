@@ -57,7 +57,8 @@ const SystemTypeFilter: React.FC<{
   agencyCountFiltered: number;
   systemCountTotal: number;
   systemCountFiltered: number;
-}> = ({ presentFilters, activeFilters, onToggle, onClearAll, agencyCountTotal, agencyCountFiltered, systemCountTotal, systemCountFiltered }) => {
+  collapsedSystemCount?: number;
+}> = ({ presentFilters, activeFilters, onToggle, onClearAll, agencyCountTotal, agencyCountFiltered, systemCountTotal, systemCountFiltered, collapsedSystemCount = 0 }) => {
   const [open, setOpen] = useState(false);
 
   if (presentFilters.size <= 1) return null; // Not useful to filter if only one type
@@ -87,7 +88,7 @@ const SystemTypeFilter: React.FC<{
           System Type Filter
           {isFiltering && (
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-900/40 border border-cyan-500/30 text-cyan-400 normal-case font-normal">
-              {agencyCountFiltered}/{agencyCountTotal} agencies · {systemCountFiltered}/{systemCountTotal} systems shown
+              {agencyCountFiltered}/{agencyCountTotal} agencies · {systemCountFiltered}/{systemCountTotal} systems shown{collapsedSystemCount > 0 ? ` · ${collapsedSystemCount} collapsed` : ''}
             </span>
           )}
         </span>
@@ -698,6 +699,9 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
     [filteredSystems]
   );
 
+  const shownSystemCount = visibleSystems.length;
+  const matchingSystemCount = filteredSystems.length;
+
   // Load batch counts when result changes
   useEffect(() => {
     if (!locationQuery) return;
@@ -786,11 +790,16 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
           </div>
           <div className="bg-slate-900 p-3 rounded border border-slate-800 min-w-[100px]">
             <div className="text-2xl font-mono-tech text-purple-400">
-              {activeFilters.size > 0 && filteredSystems.length !== systems.length
-                ? <><span>{filteredSystems.length}</span><span className="text-sm text-slate-600">/{systems.length}</span></>
+              {(shownSystemCount !== systems.length || silentSystems.length > 0)
+                ? <><span>{shownSystemCount}</span><span className="text-sm text-slate-600">/{matchingSystemCount}</span></>
                 : systems.length}
             </div>
-            <div className="text-xs text-slate-500 uppercase tracking-wider">Systems</div>
+            <div className="text-xs text-slate-500 uppercase tracking-wider">Systems Shown</div>
+            {silentSystems.length > 0 && (
+              <div className="mt-1 text-[9px] text-slate-600 font-mono-tech uppercase tracking-wider">
+                {silentSystems.length} control-only collapsed
+              </div>
+            )}
           </div>
           {/* Smart Export — only shown when community confirmations exist */}
           {counts.size > 0 && (
@@ -848,7 +857,8 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
         agencyCountTotal={agencies.length}
         agencyCountFiltered={filteredAgencies.length}
         systemCountTotal={systems.length}
-        systemCountFiltered={filteredSystems.length}
+        systemCountFiltered={shownSystemCount}
+        collapsedSystemCount={silentSystems.length}
       />
 
       {/* Search + range filter row */}
