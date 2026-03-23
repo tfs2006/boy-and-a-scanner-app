@@ -574,7 +574,17 @@ function App() {
 
   const handleCsvExport = async (data: ScanResult) => {
     const { generateCSV } = await import('./utils/csvGenerator');
-    generateCSV(data);
+    const result = generateCSV(data);
+    if (result.ok) {
+      pushStatusNotice({
+        tone: 'success',
+        message: `CSV export ready: ${result.count} rows.`,
+        detail: `Downloaded ${result.filename}.`,
+      });
+      return;
+    }
+
+    pushStatusNotice({ tone: 'error', message: result.message });
   };
 
   const handleChirpExport = async (data: ScanResult) => {

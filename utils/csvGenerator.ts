@@ -1,6 +1,10 @@
 
 import { ScanResult, TripResult } from '../types';
 
+export type ExportResult =
+  | { ok: true; filename: string; count: number }
+  | { ok: false; message: string };
+
 export type SmartExportResult =
   | { ok: true; filename: string; count: number }
   | { ok: false; message: string };
@@ -97,25 +101,38 @@ const processScanResult = (data: ScanResult): string[][] => {
 /**
  * Trigger browser download
  */
-const downloadCsv = (content: string, filename: string) => {
+const downloadCsv = (content: string, filename: string, count: number): ExportResult => {
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
-  if (link.download !== undefined) {
-    const url = URL.createObjectURL(blob);
+
+  if (link.download === undefined || typeof URL.createObjectURL !== 'function') {
+    return { ok: false, message: 'CSV export is not supported in this browser.' };
+  }
+
+  let url: string | null = null;
+
+  try {
+    url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
     link.setAttribute('download', filename);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    return { ok: true, filename, count };
+  } catch {
+    return { ok: false, message: 'Failed to start the CSV download. Please try again.' };
+  } finally {
+    if (url) {
+      URL.revokeObjectURL(url);
+    }
   }
 };
 
 /**
  * Main Export Function
  */
-export const generateCSV = (data: ScanResult | TripResult) => {
+export const generateCSV = (data: ScanResult | TripResult): ExportResult => {
   let allRows: string[][] = [];
   let filename = 'scanner_data.csv';
 
@@ -143,7 +160,7 @@ export const generateCSV = (data: ScanResult | TripResult) => {
     ...allRows.map(row => row.map(escapeCsv).join(','))
   ].join('\n');
 
-  downloadCsv(csvContent, filename);
+  return downloadCsv(csvContent, filename, allRows.length);
 };
 
 /**
@@ -190,6 +207,5 @@ export const generateSmartCSV = (
   ].join('\n');
 
   const filename = `SmartExport_${data.locationName}_min${minConfirmations}conf.csv`.replace(/\s+/g, '_');
-  downloadCsv(csvContent, filename);
-  return { ok: true, filename, count: totalFreqs };
+  return downloadCsv(csvContent, filename, totalFreqs);
 };

@@ -92,15 +92,28 @@ export function exportChirpCSV(data: ScanResult): ExportResult {
 
   const csv = rows.join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const filename = `${data.locationName.replace(/[^a-z0-9]/gi, '_')}_chirp.csv`;
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  if (a.download === undefined || typeof URL.createObjectURL !== 'function') {
+    return { ok: false, message: 'CHIRP export is not supported in this browser.' };
+  }
+
+  let objectUrl: string | null = null;
+
+  try {
+    objectUrl = URL.createObjectURL(blob);
+    a.href = objectUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch {
+    return { ok: false, message: 'Failed to start the CHIRP download. Please try again.' };
+  } finally {
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
 
   return { ok: true, filename, count: location };
 }

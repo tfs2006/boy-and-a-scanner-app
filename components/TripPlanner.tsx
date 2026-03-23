@@ -52,7 +52,10 @@ export const TripPlanner: React.FC = () => {
 
     const handleTripCsvExport = async (data: TripResult) => {
         const { generateCSV } = await import('../utils/csvGenerator');
-        generateCSV(data);
+        const result = generateCSV(data);
+        if (!result.ok) {
+            setError(result.message);
+        }
     };
 
     const handleTripZipExport = async (data: TripResult) => {
