@@ -7,7 +7,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const parsed = parseExportJobPayload(req.body);
-  if (!parsed.success) {
+  if ("issues" in parsed) {
     return res.status(400).json({
       valid: false,
       issues: parsed.issues,
