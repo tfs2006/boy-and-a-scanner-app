@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ScanResult, Agency, TrunkedSystem, FrequencyConfirmationCount } from '../types';
-import { Radio, Shield, Flame, Activity, Hash, Zap, CheckCircle2, AlertTriangle, SearchCheck, Signal, Ear, Loader2, SlidersHorizontal, X, Search, Download } from 'lucide-react';
+import { Radio, Shield, Flame, Activity, Hash, Zap, CheckCircle2, AlertTriangle, SearchCheck, Signal, Ear, Loader2, SlidersHorizontal, X, Search, Download, ChevronDown, ChevronUp } from 'lucide-react';
 import { logConfirmation, getBatchConfirmationCounts } from '../services/crowdsourceService';
 import {
   CONVENTIONAL_SYSTEM_FILTER_KEYS as CONV_FILTER_KEYS,
@@ -576,6 +576,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
 
   // --- Text search within results ---
   const [searchText, setSearchText] = useState('');
+  const [showSilentSystems, setShowSilentSystems] = useState(false);
 
   // --- Frequency range filter ---
   const freqBounds = useMemo(() => {
@@ -591,6 +592,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
   useEffect(() => {
     setActiveFilters(new Set());
     setSearchText('');
+    setShowSilentSystems(false);
     setFreqRange(null); // resets to full bounds
   }, [data]);
 
@@ -685,6 +687,16 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
 
     return filtered;
   }, [systems, activeFilters, searchText]);
+
+  const visibleSystems = useMemo(
+    () => filteredSystems.filter((system) => (system.talkgroups?.length ?? 0) > 0),
+    [filteredSystems]
+  );
+
+  const silentSystems = useMemo(
+    () => filteredSystems.filter((system) => (system.talkgroups?.length ?? 0) === 0),
+    [filteredSystems]
+  );
 
   // Load batch counts when result changes
   useEffect(() => {
@@ -965,15 +977,64 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
             <Hash className="w-5 h-5 text-slate-400" />
             <h3 className="text-xl font-semibold text-slate-200">Trunked Systems</h3>
           </div>
-          {filteredSystems.length > 0 ? (
-            filteredSystems.map((sys, i) => <TrunkedSystemCard key={i} system={sys} />)
+          {visibleSystems.length > 0 ? (
+            visibleSystems.map((sys, i) => <TrunkedSystemCard key={i} system={sys} />)
           ) : (activeFilters.size > 0 || searchText) ? (
-            <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
-              No trunked systems match the active {searchText ? 'search' : 'filter'}.
-            </div>
+            silentSystems.length > 0 ? (
+              <div className="p-6 border border-dashed border-slate-700 rounded-lg text-slate-400 bg-slate-900/20">
+                <div className="text-center font-mono-tech text-sm">No trunked talkgroups match the active {searchText ? 'search' : 'filter'}.</div>
+                <div className="mt-2 text-center text-xs text-slate-500">{silentSystems.length} control-channel-only system{silentSystems.length !== 1 ? 's remain' : ' remains'} available below.</div>
+              </div>
+            ) : (
+              <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
+                No trunked systems match the active {searchText ? 'search' : 'filter'}.
+              </div>
+            )
           ) : (
-            <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
-              No trunked systems found via search.
+            silentSystems.length > 0 ? (
+              <div className="p-6 border border-dashed border-slate-700 rounded-lg text-slate-400 bg-slate-900/20">
+                <div className="text-center font-mono-tech text-sm">No trunked talkgroups were returned, but system frequencies are still available.</div>
+                <div className="mt-2 text-center text-xs text-slate-500">Expand the section below to inspect control-channel-only systems.</div>
+              </div>
+            ) : (
+              <div className="p-8 text-center border border-dashed border-slate-700 rounded-lg text-slate-500">
+                No trunked systems found via search.
+              </div>
+            )
+          )}
+
+          {silentSystems.length > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900/40 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowSilentSystems((value) => !value)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-800/40 transition-colors"
+                aria-expanded={showSilentSystems}
+              >
+                <div>
+                  <div className="text-sm font-mono-tech text-slate-200">Control-Channel-Only Systems</div>
+                  <div className="text-xs text-slate-500">
+                    {silentSystems.length} system{silentSystems.length !== 1 ? 's' : ''} with site frequencies but no visible talkgroups
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-slate-400">
+                  <span className="text-xs font-mono-tech uppercase tracking-wider">{showSilentSystems ? 'Hide' : 'Show'}</span>
+                  {showSilentSystems ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </div>
+              </button>
+
+              {showSilentSystems && (
+                <div className="px-4 pb-4 border-t border-slate-700/60">
+                  <div className="pt-4 text-xs text-slate-500 mb-4">
+                    These systems were kept because their site frequencies may still be useful for manual programming or scanner discovery.
+                  </div>
+                  <div className="space-y-6">
+                    {silentSystems.map((sys, index) => (
+                      <TrunkedSystemCard key={`silent-${index}`} system={sys} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
