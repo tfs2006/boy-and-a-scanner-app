@@ -70,7 +70,7 @@
     var errorBox = document.getElementById('startup-error');
     if (errorBox) {
       errorBox.style.display = 'block';
-      errorBox.innerHTML = '<strong>System Error:</strong><br>' + event.message;
+      errorBox.textContent = 'System Error: ' + String(event.message || 'Unexpected startup failure.');
     }
   });
 </script>

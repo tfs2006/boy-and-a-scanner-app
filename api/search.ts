@@ -2,6 +2,23 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from "@google/genai";
 
 const MODEL_NAME = "gemini-2.0-flash";
+const MODEL_TIMEOUT_MS = 40_000;
+const DEBUG_LOGS = process.env.NODE_ENV !== 'production';
+
+function debugLog(...args: unknown[]) {
+  if (DEBUG_LOGS) {
+    console.log(...args);
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return await Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(message)), timeoutMs);
+    })
+  ]);
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Only allow POST
@@ -88,26 +105,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let usedTools = useTools;
 
     if (!useTools) {
-      console.log(`[Optimization] Skipping Google Search tool for structured location: "${safeLocation}"`);
+      debugLog(`[Optimization] Skipping Google Search tool for structured location: "${safeLocation}"`);
     }
 
     try {
-      response = await ai.models.generateContent({
+      response = await withTimeout(ai.models.generateContent({
         model: MODEL_NAME,
         contents: prompt,
         config: {
           tools: useTools ? [{ googleSearch: {} }] : [],
         },
-      });
+      }), MODEL_TIMEOUT_MS, 'AI search timed out');
     } catch (err: any) {
       const msg = err.message || JSON.stringify(err);
       if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403') || msg.includes('PERMISSION_DENIED')) {
         console.warn("Google Search Tool rejected. Retrying without tools...");
         usedTools = false;
-        response = await ai.models.generateContent({
+        response = await withTimeout(ai.models.generateContent({
           model: MODEL_NAME,
           contents: prompt,
-        });
+        }), MODEL_TIMEOUT_MS, 'AI search timed out');
       } else {
         throw err;
       }

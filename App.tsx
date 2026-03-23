@@ -3,7 +3,7 @@ import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu, Users } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
-import { Agency, SearchResponse, ScanResult, ServiceType, TrunkedSystem } from './types';
+import { SearchResponse, ScanResult, ServiceType } from './types';
 import { FrequencyDisplay } from './components/FrequencyDisplay';
 import { Auth } from './components/Auth';
 import { isValidLocationInput } from './utils/security';
@@ -15,7 +15,14 @@ import { loadServicePreferences, saveServicePreferences, getLocalServicePreferen
 import { getNotifications, getUnreadCount, markAllRead, AppNotification } from './services/notificationsService';
 import { SearchSuggestions, saveSearchToHistory } from './components/SearchSuggestions';
 import { SearchForm } from './components/SearchForm';
-import type { SystemFilterKey } from './utils/sentinelExporter';
+import {
+  CONVENTIONAL_SYSTEM_FILTER_KEYS as SDS100_CONVENTIONAL_KEYS,
+  TRUNKED_SYSTEM_FILTER_KEYS as SDS100_TRUNKED_KEYS,
+  detectSystemFilters,
+  frequencyMatchesSystemFilter,
+  trunkedSystemMatchesFilter,
+  type SystemFilterKey,
+} from './utils/systemTypeFilters';
 
 const TripPlanner = lazy(async () => ({ default: (await import('./components/TripPlanner')).TripPlanner }));
 const ProgrammingManual = lazy(async () => ({ default: (await import('./components/ProgrammingManual')).ProgrammingManual }));
@@ -41,64 +48,11 @@ const SDS100_FILTER_OPTIONS: Array<{ key: SystemFilterKey; label: string; sublab
   { key: 'motorola', label: 'Motorola', sublabel: 'Type I/II' }
 ];
 
-const SDS100_CONVENTIONAL_KEYS: SystemFilterKey[] = ['analog', 'p25-conv', 'dmr-conv', 'nxdn-conv'];
-const SDS100_TRUNKED_KEYS: SystemFilterKey[] = ['p25-phase1', 'p25-phase2', 'dmr-trunked', 'nxdn-trunked', 'edacs', 'ltr', 'motorola'];
-
 const SDS100_PRESETS: Array<{ label: string; keys: SystemFilterKey[] }> = [
   { label: 'Conventional Only', keys: SDS100_CONVENTIONAL_KEYS },
   { label: 'Trunked Only', keys: SDS100_TRUNKED_KEYS },
   { label: 'Public Safety Mix', keys: ['analog', 'p25-conv', 'p25-phase1', 'p25-phase2', 'dmr-conv', 'dmr-trunked', 'nxdn-conv', 'nxdn-trunked'] },
 ];
-
-function freqMatchesSds100Filter(freq: Agency['frequencies'][number], key: SystemFilterKey): boolean {
-  const mode = (freq.mode || '').toUpperCase();
-  switch (key) {
-    case 'analog':
-      return /^(FM|FMN|NFM|AM|AN|WFM|USB|LSB|CW|FB|MO)$/.test(mode) && !freq.nac && !freq.colorCode && !freq.ran;
-    case 'p25-conv':
-      return /P25|APCO/.test(mode) || (!!freq.nac && !/LTR|EDACS/i.test(mode));
-    case 'dmr-conv':
-      return /DMR/.test(mode) || !!freq.colorCode;
-    case 'nxdn-conv':
-      return /NXDN|NXD/.test(mode) || !!freq.ran;
-    default:
-      return false;
-  }
-}
-
-function systemMatchesSds100Filter(system: TrunkedSystem, key: SystemFilterKey): boolean {
-  const type = (system.type || '').toLowerCase();
-  switch (key) {
-    case 'p25-phase1': return /p25/.test(type) && !/phase\s*i{2}|phase\s*2|tdma/.test(type);
-    case 'p25-phase2': return /phase\s*i{2}|phase\s*2|tdma/.test(type);
-    case 'dmr-trunked': return /\bdmr\b/.test(type);
-    case 'nxdn-trunked': return /nxdn|nexedge/.test(type);
-    case 'edacs': return /edacs/.test(type);
-    case 'ltr': return /\bltr\b/.test(type);
-    case 'motorola': return /motorola|type\s*i/.test(type);
-    default: return false;
-  }
-}
-
-function detectSds100Filters(data: ScanResult): Set<SystemFilterKey> {
-  const present = new Set<SystemFilterKey>();
-
-  for (const agency of data.agencies || []) {
-    for (const freq of agency.frequencies || []) {
-      SDS100_CONVENTIONAL_KEYS.forEach((key) => {
-        if (freqMatchesSds100Filter(freq, key)) present.add(key);
-      });
-    }
-  }
-
-  for (const system of data.trunkedSystems || []) {
-    SDS100_TRUNKED_KEYS.forEach((key) => {
-      if (systemMatchesSds100Filter(system, key)) present.add(key);
-    });
-  }
-
-  return present;
-}
 
 const SectionLoader = ({ label = 'Loading module...' }: { label?: string }) => (
   <div className="flex items-center justify-center py-16 text-slate-400 font-mono-tech text-sm gap-3">
@@ -162,13 +116,13 @@ function App() {
       .map((agency) => ({
         ...agency,
         frequencies: (agency.frequencies || []).filter((freq) =>
-          SDS100_CONVENTIONAL_KEYS.some((key) => selected.has(key) && freqMatchesSds100Filter(freq, key))
+          SDS100_CONVENTIONAL_KEYS.some((key) => selected.has(key) && frequencyMatchesSystemFilter(freq, key))
         ),
       }))
       .filter((agency) => agency.frequencies.length > 0);
 
     const matchedSystems = (result.trunkedSystems || []).filter((system) =>
-      SDS100_TRUNKED_KEYS.some((key) => selected.has(key) && systemMatchesSds100Filter(system, key))
+      SDS100_TRUNKED_KEYS.some((key) => selected.has(key) && trunkedSystemMatchesFilter(system, key))
     );
 
     return {
@@ -180,7 +134,7 @@ function App() {
   }, [result, sds100Filters]);
 
   const sds100AvailableFilters = React.useMemo(() => {
-    return result ? detectSds100Filters(result) : new Set<SystemFilterKey>();
+    return result ? detectSystemFilters(result) : new Set<SystemFilterKey>();
   }, [result]);
 
 
@@ -470,10 +424,20 @@ function App() {
   };
 
   const handleSignOut = async () => {
+    clearRRCredentials();
+    activeSearchControllerRef.current?.abort();
+    activeSearchRequestIdRef.current += 1;
+    setResult(null);
+    setPinnedResult(null);
+    setSearchQuery('');
+    setGrounding(null);
+    setError(null);
+    setRrWarning(null);
+    setLoading(false);
+    setSearchStep('');
+
     if (supabase) {
       await supabase.auth.signOut();
-      setResult(null);
-      setSearchQuery('');
     }
   };
 
@@ -531,6 +495,11 @@ function App() {
       async (position) => {
         if (!isActiveSearch(requestId, controller.signal)) return;
         const { latitude, longitude } = position.coords;
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+          setError('GPS Error: Received invalid coordinates from the device.');
+          finishSearch(requestId, startTime, controller.signal);
+          return;
+        }
         const coordString = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
         setSearchQuery(coordString);
         try {
@@ -592,7 +561,7 @@ function App() {
   };
 
   const openSds100Modal = (data: ScanResult) => {
-    const available = detectSds100Filters(data);
+    const available = detectSystemFilters(data);
     setSds100Filters(available);
     setShowSds100Modal(true);
   };

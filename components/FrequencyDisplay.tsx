@@ -3,17 +3,18 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ScanResult, Agency, TrunkedSystem, FrequencyConfirmationCount } from '../types';
 import { Radio, Shield, Flame, Activity, Hash, Zap, CheckCircle2, AlertTriangle, SearchCheck, Signal, Ear, Loader2, SlidersHorizontal, X, Search, Download } from 'lucide-react';
 import { logConfirmation, getBatchConfirmationCounts } from '../services/crowdsourceService';
+import {
+  CONVENTIONAL_SYSTEM_FILTER_KEYS as CONV_FILTER_KEYS,
+  TRUNKED_SYSTEM_FILTER_KEYS as SYS_FILTER_KEYS,
+  detectSystemFilters,
+  frequencyMatchesSystemFilter,
+  trunkedSystemMatchesFilter,
+  type SystemFilterKey,
+} from '../utils/systemTypeFilters';
 
 // ---------------------------------------------------------------------------
 // System-type filter taxonomy
 // ---------------------------------------------------------------------------
-type SystemFilterKey =
-  | 'analog'
-  | 'p25-conv' | 'p25-phase1' | 'p25-phase2'
-  | 'dmr-conv' | 'dmr-trunked'
-  | 'nxdn-conv' | 'nxdn-trunked'
-  | 'edacs' | 'ltr' | 'motorola';
-
 interface SystemFilterConfig {
   label: string;
   sublabel?: string;
@@ -43,60 +44,6 @@ const FILTER_ORDER: SystemFilterKey[] = [
   'nxdn-conv', 'nxdn-trunked',
   'edacs', 'ltr', 'motorola',
 ];
-
-// Keys that apply to individual agency frequencies
-const CONV_FILTER_KEYS: SystemFilterKey[] = ['analog', 'p25-conv', 'dmr-conv', 'nxdn-conv'];
-// Keys that apply to trunked systems
-const SYS_FILTER_KEYS: SystemFilterKey[] = ['p25-phase1', 'p25-phase2', 'dmr-trunked', 'nxdn-trunked', 'edacs', 'ltr', 'motorola'];
-
-function freqMatchesFilter(freq: Agency['frequencies'][number], key: SystemFilterKey): boolean {
-  const mode = (freq.mode || '').toUpperCase();
-  switch (key) {
-    case 'analog':
-      // Analog: FM/AM-family modes with no digital identifiers
-      return /^(FM|FMN|NFM|AM|AN|WFM|USB|LSB|CW|FB|MO)$/.test(mode) && !freq.nac && !freq.colorCode && !freq.ran;
-    case 'p25-conv':
-      return /P25|APCO/.test(mode) || (!!freq.nac && !/LTR|EDACS/i.test(mode));
-    case 'dmr-conv':
-      return /DMR/.test(mode) || !!freq.colorCode;
-    case 'nxdn-conv':
-      return /NXDN|NXD/.test(mode) || !!freq.ran;
-    default:
-      return false;
-  }
-}
-
-function systemMatchesFilter(system: TrunkedSystem, key: SystemFilterKey): boolean {
-  const type = (system.type || '').toLowerCase();
-  switch (key) {
-    case 'p25-phase1':   return /p25/.test(type) && !/phase\s*i{2}|phase\s*2|tdma/.test(type);
-    case 'p25-phase2':   return /phase\s*i{2}|phase\s*2|tdma/.test(type);
-    case 'dmr-trunked':  return /\bdmr\b/.test(type);
-    case 'nxdn-trunked': return /nxdn|nexedge/.test(type);
-    case 'edacs':        return /edacs/.test(type);
-    case 'ltr':          return /\bltr\b/.test(type);
-    case 'motorola':     return /motorola|type\s*i/.test(type);
-    default:             return false;
-  }
-}
-
-/** Scan data and return only the filter keys that are actually present */
-function detectPresentFilters(data: ScanResult): Set<SystemFilterKey> {
-  const present = new Set<SystemFilterKey>();
-  for (const agency of data.agencies || []) {
-    for (const freq of agency.frequencies || []) {
-      for (const key of CONV_FILTER_KEYS) {
-        if (freqMatchesFilter(freq, key)) present.add(key);
-      }
-    }
-  }
-  for (const sys of data.trunkedSystems || []) {
-    for (const key of SYS_FILTER_KEYS) {
-      if (systemMatchesFilter(sys, key)) present.add(key);
-    }
-  }
-  return present;
-}
 
 // ---------------------------------------------------------------------------
 // System Type Filter UI
@@ -634,7 +581,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
   const rangeActive = freqBounds !== null && (activeLow !== freqBounds[0] || activeHigh !== freqBounds[1]);
 
   // Detect which filter types are actually present in this result
-  const presentFilters = useMemo(() => detectPresentFilters(data), [data]);
+  const presentFilters = useMemo(() => detectSystemFilters(data), [data]);
 
   const handleFilterToggle = useCallback((key: SystemFilterKey) => {
     setActiveFilters(prev => {
@@ -657,7 +604,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
 
         // Apply system-type filter
         if (activeFilters.size > 0 && activeConvKeys.length > 0) {
-          freqs = freqs.filter(f => activeConvKeys.some(k => freqMatchesFilter(f, k)));
+          freqs = freqs.filter(f => activeConvKeys.some(k => frequencyMatchesSystemFilter(f, k)));
         } else if (activeFilters.size > 0 && activeConvKeys.length === 0) {
           freqs = []; // Only system-type filters active, no conv keys match
         }
@@ -702,7 +649,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
       if (activeSysKeys.length === 0) {
         filtered = [];
       } else {
-        filtered = filtered.filter(sys => activeSysKeys.some(k => systemMatchesFilter(sys, k)));
+        filtered = filtered.filter(sys => activeSysKeys.some(k => trunkedSystemMatchesFilter(sys, k)));
       }
     }
 

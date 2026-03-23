@@ -1,6 +1,13 @@
 
 import JSZip from 'jszip';
-import { ScanResult, TripResult, Agency, TrunkedSystem } from '../types';
+import { ScanResult, TripResult } from '../types';
+import {
+    CONVENTIONAL_SYSTEM_FILTER_KEYS as CONV_FILTER_KEYS,
+    TRUNKED_SYSTEM_FILTER_KEYS as TRUNK_FILTER_KEYS,
+    frequencyMatchesSystemFilter,
+    trunkedSystemMatchesFilter,
+    type SystemFilterKey,
+} from './systemTypeFilters';
 
 /**
  * Sentinel Exporter
@@ -9,46 +16,6 @@ import { ScanResult, TripResult, Agency, TrunkedSystem } from '../types';
  * for easy copy-paste import into Uniden Sentinel software
  * (SDS100 / SDS200 programming).
  */
-
-export type SystemFilterKey =
-  | 'analog'
-  | 'p25-conv' | 'p25-phase1' | 'p25-phase2'
-  | 'dmr-conv' | 'dmr-trunked'
-  | 'nxdn-conv' | 'nxdn-trunked'
-  | 'edacs' | 'ltr' | 'motorola';
-
-const CONV_FILTER_KEYS: SystemFilterKey[] = ['analog', 'p25-conv', 'dmr-conv', 'nxdn-conv'];
-const TRUNK_FILTER_KEYS: SystemFilterKey[] = ['p25-phase1', 'p25-phase2', 'dmr-trunked', 'nxdn-trunked', 'edacs', 'ltr', 'motorola'];
-
-function freqMatchesFilter(freq: Agency['frequencies'][number], key: SystemFilterKey): boolean {
-    const mode = (freq.mode || '').toUpperCase();
-    switch (key) {
-        case 'analog':
-            return /^(FM|FMN|NFM|AM|AN|WFM|USB|LSB|CW|FB|MO)$/.test(mode) && !freq.nac && !freq.colorCode && !freq.ran;
-        case 'p25-conv':
-            return /P25|APCO/.test(mode) || (!!freq.nac && !/LTR|EDACS/i.test(mode));
-        case 'dmr-conv':
-            return /DMR/.test(mode) || !!freq.colorCode;
-        case 'nxdn-conv':
-            return /NXDN|NXD/.test(mode) || !!freq.ran;
-        default:
-            return false;
-    }
-}
-
-function systemMatchesFilter(system: TrunkedSystem, key: SystemFilterKey): boolean {
-    const type = (system.type || '').toLowerCase();
-    switch (key) {
-        case 'p25-phase1': return /p25/.test(type) && !/phase\s*i{2}|phase\s*2|tdma/.test(type);
-        case 'p25-phase2': return /phase\s*i{2}|phase\s*2|tdma/.test(type);
-        case 'dmr-trunked': return /\bdmr\b/.test(type);
-        case 'nxdn-trunked': return /nxdn|nexedge/.test(type);
-        case 'edacs': return /edacs/.test(type);
-        case 'ltr': return /\bltr\b/.test(type);
-        case 'motorola': return /motorola|type\s*i/.test(type);
-        default: return false;
-    }
-}
 
 function filterScanResultBySystemTypes(data: ScanResult, selectedFilters?: SystemFilterKey[]): ScanResult {
     if (!selectedFilters || selectedFilters.length === 0) {
@@ -61,13 +28,13 @@ function filterScanResultBySystemTypes(data: ScanResult, selectedFilters?: Syste
         .map(agency => ({
             ...agency,
             frequencies: (agency.frequencies || []).filter(freq =>
-                CONV_FILTER_KEYS.some(key => selected.has(key) && freqMatchesFilter(freq, key))
+                CONV_FILTER_KEYS.some(key => selected.has(key) && frequencyMatchesSystemFilter(freq, key))
             )
         }))
         .filter(agency => agency.frequencies.length > 0);
 
     const trunkedSystems = (data.trunkedSystems || [])
-        .filter(system => TRUNK_FILTER_KEYS.some(key => selected.has(key) && systemMatchesFilter(system, key)));
+        .filter(system => TRUNK_FILTER_KEYS.some(key => selected.has(key) && trunkedSystemMatchesFilter(system, key)));
 
     return {
         ...data,

@@ -4,6 +4,12 @@ import { sanitizeForPrompt } from "../utils/security";
 import { supabase } from "./supabaseClient";
 import { fetchFromRadioReference, RRCredentials } from "./rrApi";
 
+const debugLog = (...args: unknown[]) => {
+  if (import.meta.env.DEV) {
+    console.log(...args);
+  }
+};
+
 // --- Caching Helpers ---
 
 async function getFromCache(key: string, rrCredentials?: RRCredentials): Promise<any | null> {
@@ -22,7 +28,7 @@ async function getFromCache(key: string, rrCredentials?: RRCredentials): Promise
     // --- QUALITY CHECK (King of the Hill) ---
     // If cache is AI-sourced (Silver) but user has RR Creds (Gold), ignore cache to fetch fresh Gold data.
     if (result && result.source === 'AI' && rrCredentials) {
-      console.log("Cache ignored: Overwriting AI data with potential RadioReference data.");
+      debugLog("Cache ignored: Overwriting AI data with potential RadioReference data.");
       return null;
     }
 
@@ -112,6 +118,47 @@ const ALL_SERVICE_TYPES: ServiceType[] = [
   'Business', 'Hospitals', 'Schools', 'Corrections', 'Security', 'Multi-Dispatch'
 ];
 
+const CLIENT_REQUEST_TIMEOUT_MS = 45_000;
+
+function createRequestSignal(timeoutMs: number, signal?: AbortSignal) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  const handleAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener('abort', handleAbort, { once: true });
+    }
+  }
+
+  return {
+    signal: controller.signal,
+    didTimeout: () => controller.signal.aborted && !signal?.aborted,
+    cleanup: () => {
+      window.clearTimeout(timeoutId);
+      if (signal) signal.removeEventListener('abort', handleAbort);
+    },
+  };
+}
+
+async function fetchJsonWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMessage: string, timeoutMs = CLIENT_REQUEST_TIMEOUT_MS) {
+  const { signal, didTimeout, cleanup } = createRequestSignal(timeoutMs, init.signal ?? undefined);
+
+  try {
+    const response = await fetch(input, { ...init, signal });
+    return response;
+  } catch (error: any) {
+    if (didTimeout()) {
+      throw new Error(timeoutMessage);
+    }
+    throw error;
+  } finally {
+    cleanup();
+  }
+}
+
 export const searchFrequencies = async (locationQuery: string, userSelectedServices: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials, signal?: AbortSignal): Promise<SearchResponse> => {
   const safeLocation = sanitizeForPrompt(locationQuery);
 
@@ -121,12 +168,12 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
 
   const cached = await getFromCache(cacheKey, rrCredentials);
   if (cached) {
-    console.log(`[Cache Hit] Returning cached result for ${safeLocation}.`);
+    debugLog(`[Cache Hit] Returning cached result for ${safeLocation}.`);
     const filteredData = filterDataByServices(cached.data, userSelectedServices);
     return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: 'Retrieved from Cache' };
   }
 
-  console.log(`[Hybrid Search] Starting Fresh Search for ${safeLocation}...`);
+  debugLog(`[Hybrid Search] Starting Fresh Search for ${safeLocation}...`);
 
   let aiGrounding: any = null;
   let rawText = '';
@@ -134,13 +181,13 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   // 1. AI Search (Always run)
   const aiPromise = (async () => {
     try {
-      console.log(`[AI Search] Fetching for ${safeLocation}...`);
-      const response = await fetch('/api/search', {
+      debugLog(`[AI Search] Fetching for ${safeLocation}...`);
+      const response = await fetchJsonWithTimeout('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal,
         body: JSON.stringify({ location: safeLocation, serviceTypes: ALL_SERVICE_TYPES })
-      });
+      }, 'AI Search timed out. Please try again.');
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'AI Search Failed');
@@ -169,7 +216,7 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   if (rrCredentials && /^\d{5}$/.test(safeLocation)) {
     rrPromise = (async () => {
       try {
-        console.log(`[RR API] Fetching for ${safeLocation}...`);
+        debugLog(`[RR API] Fetching for ${safeLocation}...`);
         const data = await fetchFromRadioReference(safeLocation, rrCredentials, ALL_SERVICE_TYPES, signal);
         if (data) {
           data.source = 'API';
@@ -196,23 +243,23 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
 
   // MERGE LOGIC
   if (rrResult && aiResult) {
-    console.log(`[Hybrid Merge] Merging RR (${rrResult.agencies?.length} agcy) + AI (${aiResult.agencies?.length} agcy)`);
+    debugLog(`[Hybrid Merge] Merging RR (${rrResult.agencies?.length} agcy) + AI (${aiResult.agencies?.length} agcy)`);
     masterData = mergeResults(rrResult, aiResult);
     rawText = rawText || 'Merged Hybrid Results (RR + AI)';
   } else if (rrResult) {
-    console.log(`[Hybrid Results] RR Only`);
+    debugLog(`[Hybrid Results] RR Only`);
     masterData = rrResult;
     rawText = "RadioReference Results";
   } else if (aiResult) {
-    console.log(`[Hybrid Results] AI Only`);
+    debugLog(`[Hybrid Results] AI Only`);
     masterData = aiResult;
     rawText = rawText || 'AI Results';
   } else {
-    console.log(`[Hybrid Search] All fetches failed. Checking Cache as backup...`);
+    debugLog(`[Hybrid Search] All fetches failed. Checking Cache as backup...`);
     // Fallback: Check Cache if everything else failed
     const backupCached = await getFromCache(cacheKey, rrCredentials);
     if (backupCached) {
-      console.log(`[Cache Backup] Found data.`);
+      debugLog(`[Cache Backup] Found data.`);
       // Filter and return immediately
       const filteredData = filterDataByServices(backupCached.data, userSelectedServices);
       return { data: filteredData, groundingChunks: backupCached.groundingChunks, rawText: "Retrieved from Cache (Offline Backup)", rrError: rrErrorMessage };
@@ -229,7 +276,7 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
     }
     // Annotate talkgroup types before caching so cache also has them
     annotateTalkgroups(masterData);
-    console.log(`[Cache Save] Storing Master Record for ${cacheKey}`);
+    debugLog(`[Cache Save] Storing Master Record for ${cacheKey}`);
     await saveToCache(cacheKey, masterData, masterGrounding);
   }
 
@@ -339,18 +386,18 @@ export const planTrip = async (start: string, end: string, userSelectedServices:
   // 1. Check Cache
   const cached = await getFromCache(cacheKey);
   if (cached) {
-    console.log(`[Cache Hit] Trip found.`);
+    debugLog(`[Cache Hit] Trip found.`);
     const filteredTrip = filterTripByServices(cached.data, userSelectedServices);
     return { trip: filteredTrip, groundingChunks: cached.groundingChunks };
   }
 
   // 2. Fetch MASTER TRIP (All Services)
-  console.log(`[Trip Plan] Fetching Master Trip Record...`);
-  const response = await fetch('/api/trip', {
+  debugLog(`[Trip Plan] Fetching Master Trip Record...`);
+  const response = await fetchJsonWithTimeout('/api/trip', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ start: safeStart, end: safeEnd, serviceTypes: ALL_SERVICE_TYPES })
-  });
+  }, 'Trip planning timed out. Please try again.');
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

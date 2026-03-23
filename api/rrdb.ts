@@ -2,6 +2,23 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const RR_SOAP_URL = "https://api.radioreference.com/soap2/";
 const RR_NAMESPACE = "http://api.radioreference.com/soap2";
+const SOAP_TIMEOUT_MS = 40_000;
+const DEBUG_LOGS = process.env.NODE_ENV !== 'production';
+
+function debugLog(...args: unknown[]) {
+  if (DEBUG_LOGS) {
+    console.log(...args);
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return await Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(message)), timeoutMs);
+    })
+  ]);
+}
 
 // --- SOAP XML Builders ---
 
@@ -40,14 +57,14 @@ function escapeXml(str: string): string {
 
 async function soapCall(method: string, params: string): Promise<string> {
   const body = buildSoapEnvelope(method, params);
-  const response = await fetch(RR_SOAP_URL, {
+  const response = await withTimeout(fetch(RR_SOAP_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'text/xml; charset=utf-8',
       'SOAPAction': `${RR_NAMESPACE}#${method}`
     },
     body
-  });
+  }), SOAP_TIMEOUT_MS, `RadioReference ${method} timed out`);
 
   if (!response.ok) {
     const text = await response.text();
@@ -212,7 +229,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // -------------------------------------------------------
     // Step 1: getZipcodeInfo → get countyId (ctid) and stateId (stid)
     // -------------------------------------------------------
-    console.log(`[RR API] Step 1: getZipcodeInfo for ${zip}`);
+    debugLog(`[RR API] Step 1: getZipcodeInfo for ${zip}`);
     const zipXml = await soapCall('getZipcodeInfo', `
       <zipcode xsi:type="xsd:int">${zip}</zipcode>
       ${authXml}
@@ -275,7 +292,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const finalStid = expectedStid || s;
         bestMatch = { ctid: c, stid: finalStid, city };
         if (s !== finalStid) {
-          console.log(`[RR API] Corrected State ID from ${s} to ${finalStid} for ZIP ${zip}`);
+          debugLog(`[RR API] Corrected State ID from ${s} to ${finalStid} for ZIP ${zip}`);
         }
       }
     }
@@ -290,12 +307,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { ctid, stid, city } = bestMatch;
-    console.log(`[RR API] ZIP ${zip} → City: ${city}, County ID: ${ctid}, State ID: ${stid} (Validated)`);
+    debugLog(`[RR API] ZIP ${zip} → City: ${city}, County ID: ${ctid}, State ID: ${stid} (Validated)`);
 
     // -------------------------------------------------------
     // Step 2: getCountyInfo → get categories, subcategories, trunked system list, agencies
     // -------------------------------------------------------
-    console.log(`[RR API] Step 2: getCountyInfo for ctid=${ctid}`);
+    debugLog(`[RR API] Step 2: getCountyInfo for ctid=${ctid}`);
 
     // Concurrently fetch County AND State info to save time
     const [countyXml, stateXml] = await Promise.all([
@@ -329,7 +346,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // For now, let's fetch them but limit to "Police" and "DOT" and "Federal" types if user didn't ask for everything.
 
     const allSubcatIds = [...countySubcatIds, ...stateSubcatIds];
-    console.log(`[RR API] Step 3: Fetching ${allSubcatIds.length} subcategory frequency sets (County: ${countySubcatIds.length}, State: ${stateSubcatIds.length})`);
+    debugLog(`[RR API] Step 3: Fetching ${allSubcatIds.length} subcategory frequency sets (County: ${countySubcatIds.length}, State: ${stateSubcatIds.length})`);
 
     // Collect relevant tag IDs based on user's service filter
     const relevantTagIds = new Set<number>();
@@ -401,7 +418,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // -------------------------------------------------------
     // Step 4: Get trunked systems with sites and talkgroups
     // -------------------------------------------------------
-    console.log(`[RR API] Step 4: Fetching ${trsListRaw.length} trunked systems`);
+    debugLog(`[RR API] Step 4: Fetching ${trsListRaw.length} trunked systems`);
     const trunkedSystems: any[] = [];
 
     // Increase limit to 50 to catch "hidden" or less popular systems

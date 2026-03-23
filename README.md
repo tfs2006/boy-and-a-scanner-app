@@ -107,7 +107,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 │   ├── favoritesService.ts  # Saved locations CRUD
 │   ├── crowdsourceService.ts# Frequency confirmations + leaderboard
 │   ├── communityService.ts  # Forum posts, comments, upvotes, events CRUD
-│   └── locationService.ts   # Reverse geocoding helpers
+│   └── locationService.ts   # Local-only location normalization helpers
 ├── utils/                 # Exporters, security, PDF generation
 │   ├── security.ts          # Input sanitization (OWASP LLM-01/02)
 │   ├── csvGenerator.ts      # CSV export
@@ -158,7 +158,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
    RR_APP_KEY=your_radioreference_app_key
    ```
 
-   > RadioReference username/password are entered by the user in-app and stored in `localStorage` only — never persisted server-side.
+   > RadioReference username/password are entered by the user in-app and stored in `sessionStorage` only — never persisted server-side.
 
 3. **Start the dev server with API routes**
    ```bash
