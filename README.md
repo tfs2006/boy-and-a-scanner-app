@@ -29,9 +29,9 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 
 ### Hybrid Data Sources
 - **RadioReference SOAP API** — Authoritative verified data for ZIP code lookups (requires RR Premium account)
-- **Google Gemini 2.0 Flash AI** — Grounded AI search for city, county, and GPS coordinate queries
+- **Google Gemini 2.0 Flash AI** — Live on-demand AI search for city, county, and GPS coordinate queries in the app
 - **Deterministic Location Resolver** — Normalizes ZIP, city/state, and county/state searches into the same geographic identity before search
-- **Cloud Cache** — Supabase-backed cache keyed by canonical geography so equivalent searches can reuse the same result set
+- **Cloud Cache** — Supabase-backed cache keyed by canonical geography with equivalent legacy aliases so ZIP, city, county, and common `St` / `Saint` variants can reuse the same result set
 
 ### Export Ecosystem
 | Export | Description |
@@ -54,6 +54,8 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 - **Notification Bell** — In-app notifications for badge unlocks and streak milestones
 - **Dark / Light theme toggle**
 - **Advanced Search** — Filter by State, City, County, or ZIP with structured form fields
+- **Guided Scope Feedback** — The app shows how a query was interpreted and offers one-tap refinement chips for ZIP, city, or county scope when useful
+- **RR Refresh Controls** — RR-backed searches can automatically upgrade AI-only cache entries, with a manual `Refresh RR` override when an immediate authoritative recheck is needed
 - **Mobile hamburger menu** — Full nav + account actions accessible on all screen sizes
 
 ### ScannerSphere Community Hub
@@ -70,7 +72,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons |
 | Auth | Supabase (Google OAuth) |
 | Database | Supabase (PostgreSQL) — cache, favorites, crowdsource logs |
-| AI | Google Gemini 2.0 Flash (`@google/genai`) |
+| AI | App: Google Gemini 2.0 Flash (`@google/genai`) • Precacher: Gemini or OpenRouter/Kimi |
 | External API | RadioReference SOAP API (premium subscription required) |
 | Maps | Leaflet + react-leaflet (CartoDB dark / OpenStreetMap tiles) |
 | Export | jsPDF, jszip, custom CSV and Sentinel formatters |
@@ -188,6 +190,8 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 | `VITE_SUPABASE_ANON_KEY` | Browser | Supabase public anon key |
 | `RR_APP_KEY` | Server-side only | RadioReference app key |
 
+App search remains Gemini-powered in production. The Oracle precacher has its own separate environment and can run either Gemini or OpenRouter/Kimi.
+
 ---
 
 ## Supabase Schema
@@ -196,7 +200,7 @@ Tables are defined in `supabase/crowdsource_schema.sql`:
 
 | Table | Purpose |
 |-------|---------|
-| `search_cache` | Cached AI+RR results keyed by `v6_loc_{sanitized_location}` |
+| `search_cache` | Cached AI+RR results keyed by canonical `v7_loc_*` geography keys with legacy `v6_loc_*` aliases still read for compatibility |
 | `favorites` | User-saved locations (RLS-protected by `user_id`) |
 | `profiles` | Display names, scanner model, bio, location, and avatar per user |
 | `frequency_reports` | Crowdsourced "Heard It" confirmations and user frequency submissions |
@@ -235,13 +239,14 @@ Current cache-warming strategy:
 - **Different refresh windows** — hot ZIPs refresh more aggressively than warm ZIPs
 - **Seed expansion over time** — hot ZIPs can be appended back into `precacher/zipcodes.json` so weekly runs steadily broaden coverage from real demand
 - **Optional RR assist for hot ZIPs** — bounded weekly refreshes can call the app's `/api/rrdb` endpoint for high-value ZIPs only when RR credentials are configured on the Oracle VM
-- **ZIP-only SEO pages** — the SEO publisher generates pages only from ZIP cache entries (`v6_loc_#####`)
+- **ZIP-only SEO pages** — the SEO publisher generates pages only from ZIP cache entries, regardless of whether they were reached through canonical v7 keys or legacy ZIP aliases
 - **Independent execution** — cache warming and SEO publishing run on separate timers so one can succeed without the other
 
 Search behavior notes:
 
 - Text searches now resolve to a canonical location before cache lookup, which lets `84770`, `St. George, UT`, and `Washington County, UT` converge on the same cached geography when they refer to the same area
 - If a text query resolves to a primary ZIP and the user has RadioReference credentials, the app can use that ZIP for a verified RR lookup instead of falling back to AI-only coverage
+- The app surfaces interpreted-scope guidance and quick refinement chips so users can explicitly rerun the search as ZIP, city, or county when a broad query could reasonably map to multiple scopes
 
 - **Script:** `precacher/precacher.mjs`
 - **Schedule:** Cache timer Monday at 8:00 AM UTC, SEO timer Monday at 8:30 AM UTC by default (configurable via `CACHE_ON_CALENDAR` / `SEO_ON_CALENDAR` in `precacher/.env`)
@@ -282,10 +287,13 @@ Important precacher env vars:
 | `AI_MODEL` | Model id used by the selected AI provider |
 | `GEMINI_API_KEY` | Gemini API key used when `AI_PROVIDER=gemini` |
 | `OPENROUTER_API_KEY` | OpenRouter API key used when `AI_PROVIDER=openrouter` |
+| `OPENROUTER_SITE_URL` | Referer sent to OpenRouter for attribution and rate-limit friendliness |
+| `OPENROUTER_APP_NAME` | App title sent to OpenRouter in the `X-Title` header |
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_ANON_KEY` | Supabase anon key for cache read/write |
 | `APP_BASE_URL` | Deployed app URL used for bounded `/api/rrdb` refreshes |
 | `DELAY_SECONDS` | Delay between Gemini requests |
+| `MAX_AGE_HOURS` | Legacy fallback if `HOT_MAX_AGE_HOURS` is not set |
 | `HOT_MAX_AGE_HOURS` | Refresh window for high-value ZIPs |
 | `WARM_MAX_AGE_HOURS` | Refresh window for seed ZIPs |
 | `MAX_SEED_ZIPS` | Max seed ZIPs included in each run |
@@ -293,6 +301,7 @@ Important precacher env vars:
 | `MAX_FAVORITE_ZIPS` | Max favorite ZIPs included in each run |
 | `MAX_REPORT_ZIPS` | Max ZIPs pulled from community activity |
 | `EXPAND_SEED_ZIPS` | Persist newly hot ZIPs back into the seed file |
+| `MAX_SEED_APPEND_PER_RUN` | Cap how many newly hot ZIPs can be appended into the seed file per run |
 | `RR_REFRESH_ENABLED` | Enable bounded RR refreshes during weekly cache runs |
 | `RR_REFRESH_HOT_ONLY` | Limit RR refreshes to hot ZIPs only |
 | `RR_USERNAME` / `RR_PASSWORD` | RR credentials used only by the Oracle worker |
