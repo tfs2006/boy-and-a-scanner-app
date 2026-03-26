@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from "@google/genai";
 
-const MODEL_NAME = "gemini-2.0-flash";
+const MODEL_NAME = "gemini-3-flash-preview";
 const MODEL_TIMEOUT_MS = 40_000;
 const DEBUG_LOGS = process.env.NODE_ENV !== 'production';
 

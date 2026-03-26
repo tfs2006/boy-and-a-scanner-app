@@ -29,7 +29,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 
 ### Hybrid Data Sources
 - **RadioReference SOAP API** — Authoritative verified data for ZIP code lookups (requires RR Premium account)
-- **Google Gemini 2.0 Flash AI** — Live on-demand AI search for city, county, and GPS coordinate queries in the app
+- **Google Gemini 3 Flash Preview AI** — Live on-demand AI search for city, county, and GPS coordinate queries in the app
 - **Deterministic Location Resolver** — Normalizes ZIP, city/state, and county/state searches into the same geographic identity before search
 - **Cloud Cache** — Supabase-backed cache keyed by canonical geography with equivalent legacy aliases so ZIP, city, county, and common `St` / `Saint` variants can reuse the same result set
 
@@ -72,7 +72,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons |
 | Auth | Supabase (Google OAuth) |
 | Database | Supabase (PostgreSQL) — cache, favorites, crowdsource logs |
-| AI | App: Google Gemini 2.0 Flash (`@google/genai`) • Precacher: Gemini or OpenRouter/Kimi |
+| AI | App: Google Gemini 3 Flash Preview (`@google/genai`) • Precacher: Gemini or OpenRouter/Kimi |
 | External API | RadioReference SOAP API (premium subscription required) |
 | Maps | Leaflet + react-leaflet (CartoDB dark / OpenStreetMap tiles) |
 | Export | jsPDF, jszip, custom CSV and Sentinel formatters |
