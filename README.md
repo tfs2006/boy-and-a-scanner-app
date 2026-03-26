@@ -239,6 +239,7 @@ Current cache-warming strategy:
 - **Different refresh windows** — hot ZIPs refresh more aggressively than warm ZIPs
 - **Seed expansion over time** — hot ZIPs can be appended back into `precacher/zipcodes.json` so weekly runs steadily broaden coverage from real demand
 - **Optional RR assist for hot ZIPs** — bounded weekly refreshes can call the app's `/api/rrdb` endpoint for high-value ZIPs only when RR credentials are configured on the Oracle VM
+- **Nightly RR upgrade queue** — a separate nightly pass can upgrade a small fixed batch of ZIP cache rows that are still AI-only, so authoritative RR data gradually replaces older AI-only entries
 - **ZIP-only SEO pages** — the SEO publisher generates pages only from ZIP cache entries, regardless of whether they were reached through canonical v7 keys or legacy ZIP aliases
 - **Independent execution** — cache warming and SEO publishing run on separate timers so one can succeed without the other
 
@@ -250,6 +251,7 @@ Search behavior notes:
 
 - **Script:** `precacher/precacher.mjs`
 - **Schedule:** Cache timer Monday at 8:00 AM UTC, SEO timer Monday at 8:30 AM UTC by default (configurable via `CACHE_ON_CALENDAR` / `SEO_ON_CALENDAR` in `precacher/.env`)
+- **Nightly RR upgrade:** `precacher-rr-upgrade.timer` runs nightly by default and upgrades `RR_UPGRADE_BATCH_SIZE` AI-only ZIP cache rows per run using your Oracle-side RR credentials
 - **ZIP list:** `precacher/zipcodes.json`
 
 To deploy/update the precacher:
@@ -263,6 +265,7 @@ Manual modes:
 ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --cache-only"
 ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --seo-only"
 ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --test"
+ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --rr-upgrade-only"
 ```
 
 The precacher needs its own `.env` containing an AI provider key plus `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
@@ -278,6 +281,13 @@ Optional RR-assisted weekly refresh for hot ZIPs:
 - Set `APP_BASE_URL=https://app.boyandascanner.com`
 - Set `RR_USERNAME` / `RR_PASSWORD` on the Oracle VM only
 - Leave `RR_REFRESH_HOT_ONLY=1` to keep the RR pass bounded to hot-demand ZIPs
+
+Nightly RR upgrade queue for AI-only ZIP cache rows:
+
+- Leave `RR_UPGRADE_ENABLED=1`
+- Set `RR_UPGRADE_BATCH_SIZE=5` to process 5 rows per night
+- Set `RR_UPGRADE_ON_CALENDAR` to the nightly UTC schedule you want
+- The worker keeps its place in `precacher/.rr-upgrade-state.json` on the Oracle VM so it moves forward through the AI-only ZIP backlog instead of repeating the same entries nightly
 
 Important precacher env vars:
 
@@ -305,6 +315,9 @@ Important precacher env vars:
 | `RR_REFRESH_ENABLED` | Enable bounded RR refreshes during weekly cache runs |
 | `RR_REFRESH_HOT_ONLY` | Limit RR refreshes to hot ZIPs only |
 | `RR_USERNAME` / `RR_PASSWORD` | RR credentials used only by the Oracle worker |
+| `RR_UPGRADE_ENABLED` | Enable the separate nightly AI-to-RR cache upgrade pass |
+| `RR_UPGRADE_BATCH_SIZE` | Number of AI-only ZIP cache rows to upgrade per nightly run |
+| `RR_UPGRADE_ON_CALENDAR` | systemd `OnCalendar` schedule for the nightly RR upgrade timer |
 | `CACHE_ON_CALENDAR` | systemd `OnCalendar` schedule for weekly cache runs |
 | `SEO_ON_CALENDAR` | systemd `OnCalendar` schedule for weekly SEO runs |
 | `GITHUB_TOKEN` | GitHub PAT used for SEO repo publishing |
@@ -314,8 +327,9 @@ Important precacher env vars:
 Operational notes:
 
 - Cache runs now report ZIP plan composition and hot/warm cache results directly in the logs
+- Nightly RR upgrade runs report how many AI-only ZIP rows were upgraded and where the cursor will resume next night
 - SEO runs report how many ZIP entries were used as input and how many pages were published
-- The legacy combined `precacher.timer` is replaced by `precacher-cache.timer` and `precacher-seo.timer`
+- The legacy combined `precacher.timer` is replaced by `precacher-cache.timer`, `precacher-seo.timer`, and `precacher-rr-upgrade.timer`
 
 ---
 

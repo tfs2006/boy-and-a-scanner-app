@@ -18,6 +18,7 @@ dist-ssr
 !.env.*.example
 .vercel
 supabase/.temp
+precacher/.rr-upgrade-state.json
 
 # Editor directories and files
 .vscode/*

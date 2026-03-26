@@ -7,7 +7,8 @@
         "start": "node precacher.mjs",
         "test": "node precacher.mjs --test",
         "cache-only": "node precacher.mjs --cache-only",
-        "seo-only": "node precacher.mjs --seo-only"
+        "seo-only": "node precacher.mjs --seo-only",
+        "rr-upgrade-only": "node precacher.mjs --rr-upgrade-only"
     },
     "dependencies": {
         "@google/genai": "^1.0.0",

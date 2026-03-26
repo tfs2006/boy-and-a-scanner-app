@@ -9,6 +9,7 @@
  * Usage:
  *   node precacher.mjs            # Full run (both phases)
  *   node precacher.mjs --test     # Test mode (3 ZIPs, SEO skipped)
+ *   node precacher.mjs --rr-upgrade-only # RR-upgrade a nightly batch of AI-only ZIP cache rows
  *   node precacher.mjs --seo-only # Skip Phase 1, run SEO generation only
  */
 
@@ -48,6 +49,9 @@ const RR_USERNAME = process.env.RR_USERNAME;
 const RR_PASSWORD = process.env.RR_PASSWORD;
 const RR_REFRESH_ENABLED = process.env.RR_REFRESH_ENABLED === '1';
 const RR_REFRESH_HOT_ONLY = process.env.RR_REFRESH_HOT_ONLY !== '0';
+const RR_UPGRADE_ENABLED = process.env.RR_UPGRADE_ENABLED !== '0';
+const RR_UPGRADE_BATCH_SIZE = parseInt(process.env.RR_UPGRADE_BATCH_SIZE) || 5;
+const RR_UPGRADE_STATE_FILE = join(__dirname, '.rr-upgrade-state.json');
 const SERVICE_TYPES = [
     'Police', 'Fire', 'EMS', 'Ham Radio', 'Railroad', 'Air', 'Marine',
     'Federal', 'Military', 'Public Works', 'Utilities', 'Transportation',
@@ -63,6 +67,7 @@ const SEO_BUILD_DIR = join(__dirname, '.seo-build');    // temp dir, cleaned eac
 const IS_TEST = process.argv.includes('--test');
 const IS_SEO_ONLY = process.argv.includes('--seo-only');
 const IS_CACHE_ONLY = process.argv.includes('--cache-only');
+const IS_RR_UPGRADE_ONLY = process.argv.includes('--rr-upgrade-only');
 
 // ─── Validate ─────────────────────────────────────────────────────────────────
 
@@ -83,6 +88,23 @@ if (AI_PROVIDER === 'openrouter' && !OPENROUTER_API_KEY) {
 
 const ai = AI_PROVIDER === 'gemini' ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+function isApiResult(resultData) {
+    return resultData?.source === 'API';
+}
+
+function readJsonFileIfExists(filePath) {
+    if (!existsSync(filePath)) return null;
+    try {
+        return JSON.parse(readFileSync(filePath, 'utf-8'));
+    } catch {
+        return null;
+    }
+}
+
+function writeJsonFile(filePath, value) {
+    writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+}
 
 function normalizeZip(value) {
     if (typeof value !== 'string') return null;
@@ -538,9 +560,105 @@ async function fetchFromAi(zip) {
     return AI_PROVIDER === 'openrouter' ? fetchFromOpenRouter(zip) : fetchFromGemini(zip);
 }
 
+async function runNightlyRrUpgradePass() {
+    if (!RR_UPGRADE_ENABLED) {
+        console.log('RR nightly upgrade pass is disabled by RR_UPGRADE_ENABLED=0.');
+        return;
+    }
+
+    if (!RR_USERNAME || !RR_PASSWORD || !APP_BASE_URL) {
+        throw new Error('RR nightly upgrade requires RR_USERNAME, RR_PASSWORD, and APP_BASE_URL.');
+    }
+
+    const startTime = Date.now();
+    const state = loadRrUpgradeState();
+
+    console.log('═══════════════════════════════════════════════════════════');
+    console.log('  BOY & A SCANNER — NIGHTLY RR CACHE UPGRADE');
+    console.log(`  Batch size: ${RR_UPGRADE_BATCH_SIZE}`);
+    console.log(`  Last cursor: ${state.lastSearchKey || 'start of list'}`);
+    console.log(`  Started: ${new Date().toISOString()}`);
+    console.log('═══════════════════════════════════════════════════════════');
+
+    const candidates = await fetchAiOnlyZipCacheEntries();
+    console.log(`  Found ${candidates.length} AI-only ZIP cache rows eligible for RR upgrade.`);
+
+    if (candidates.length === 0) {
+        saveRrUpgradeState({ lastSearchKey: null, lastRunAt: new Date().toISOString() });
+        console.log('  Nothing to upgrade.');
+        return;
+    }
+
+    const batch = selectRrUpgradeBatch(candidates, RR_UPGRADE_BATCH_SIZE, state.lastSearchKey);
+    console.log(`  Processing ${batch.length} rows this run.`);
+
+    let upgraded = 0;
+    let skipped = 0;
+    let failed = 0;
+    let lastProcessedKey = state.lastSearchKey;
+
+    for (let i = 0; i < batch.length; i++) {
+        const entry = batch[i];
+        const zip = extractZipFromSearchKey(entry.search_key);
+        const progress = `[${i + 1}/${batch.length}]`;
+
+        if (!zip) {
+            console.log(`${progress} ${entry.search_key} — SKIP (not a ZIP cache key)`);
+            skipped++;
+            lastProcessedKey = entry.search_key;
+            continue;
+        }
+
+        console.log(`${progress} ${zip} — upgrading AI cache with RadioReference...`);
+
+        try {
+            const rrData = await fetchFromRadioReference(zip);
+            if (!rrData || ((rrData.agencies?.length || 0) === 0 && (rrData.trunkedSystems?.length || 0) === 0)) {
+                console.log('   └─ RR returned no usable data; leaving AI cache in place.');
+                skipped++;
+            } else {
+                const mergedData = entry.result_data ? mergeResults(rrData, entry.result_data) : rrData;
+                mergedData.source = 'API';
+                const ok = await saveToCache(entry.search_key, mergedData, entry.grounding_chunks || null);
+                if (ok) {
+                    upgraded++;
+                    console.log(`   └─ ✅ Upgraded ${entry.search_key} to RR-backed cache.`);
+                } else {
+                    failed++;
+                }
+            }
+        } catch (error) {
+            console.error(`   └─ ❌ Error: ${error.message}`);
+            failed++;
+        }
+
+        lastProcessedKey = entry.search_key;
+
+        if (i < batch.length - 1) {
+            await sleep(DELAY_MS);
+        }
+    }
+
+    saveRrUpgradeState({ lastSearchKey: lastProcessedKey, lastRunAt: new Date().toISOString() });
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log('');
+    console.log('  NIGHTLY RR UPGRADE RESULTS');
+    console.log(`  ✅ Upgraded: ${upgraded}`);
+    console.log(`  ⏭️  Skipped:  ${skipped}`);
+    console.log(`  ❌ Failed:   ${failed}`);
+    console.log(`  ⏱️  Elapsed:  ${elapsed}s`);
+    console.log(`  Next cursor: ${lastProcessedKey || 'start of list'}`);
+}
+
 // ─── Main Loop ────────────────────────────────────────────────────────────────
 
 async function run() {
+    if (IS_RR_UPGRADE_ONLY) {
+        await runNightlyRrUpgradePass();
+        return;
+    }
+
     const startTime = Date.now();
 
     let zipPlan = [];
@@ -744,6 +862,68 @@ async function fetchAllCachedEntries() {
     }
 
     return allRows;
+}
+
+async function fetchAiOnlyZipCacheEntries() {
+    const PAGE_SIZE = 1000;
+    let allRows = [];
+    let from = 0;
+
+    while (true) {
+        const { data, error } = await supabase
+            .from('search_cache')
+            .select('search_key, result_data, grounding_chunks, updated_at')
+            .range(from, from + PAGE_SIZE - 1);
+
+        if (error) {
+            console.error(`   └─ Supabase read error: ${error.message}`);
+            break;
+        }
+        if (!data || data.length === 0) break;
+
+        allRows = allRows.concat(
+            data.filter((row) => {
+                const zip = extractZipFromSearchKey(row.search_key);
+                return Boolean(zip) && !isApiResult(row.result_data);
+            })
+        );
+
+        if (data.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+    }
+
+    return allRows.sort((a, b) => a.search_key.localeCompare(b.search_key));
+}
+
+function loadRrUpgradeState() {
+    return readJsonFileIfExists(RR_UPGRADE_STATE_FILE) || { lastSearchKey: null, lastRunAt: null };
+}
+
+function saveRrUpgradeState(state) {
+    writeJsonFile(RR_UPGRADE_STATE_FILE, state);
+}
+
+function selectRrUpgradeBatch(entries, batchSize, lastSearchKey) {
+    if (entries.length === 0 || batchSize <= 0) return [];
+
+    let startIndex = 0;
+    if (lastSearchKey) {
+        const nextIndex = entries.findIndex((entry) => entry.search_key > lastSearchKey);
+        startIndex = nextIndex === -1 ? 0 : nextIndex;
+    }
+
+    const selected = [];
+    const seen = new Set();
+
+    for (let offset = 0; offset < entries.length && selected.length < batchSize; offset++) {
+        const index = (startIndex + offset) % entries.length;
+        const entry = entries[index];
+        if (seen.has(entry.search_key)) continue;
+        seen.add(entry.search_key);
+        selected.push(entry);
+    }
+
+    return selected;
 }
 
 // ─── SEO: HTML Template ───────────────────────────────────────────────────────
