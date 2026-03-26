@@ -285,7 +285,7 @@ Optional RR-assisted weekly refresh for hot ZIPs:
 Nightly RR upgrade queue for AI-only ZIP cache rows:
 
 - Leave `RR_UPGRADE_ENABLED=1`
-- Set `RR_UPGRADE_BATCH_SIZE=5` to process 5 rows per night
+- Set `RR_UPGRADE_BATCH_SIZE=15` to process 15 rows per night
 - Set `RR_UPGRADE_ON_CALENDAR` to the nightly UTC schedule you want
 - The worker keeps its place in `precacher/.rr-upgrade-state.json` on the Oracle VM so it moves forward through the AI-only ZIP backlog instead of repeating the same entries nightly
 

@@ -50,7 +50,7 @@ const RR_PASSWORD = process.env.RR_PASSWORD;
 const RR_REFRESH_ENABLED = process.env.RR_REFRESH_ENABLED === '1';
 const RR_REFRESH_HOT_ONLY = process.env.RR_REFRESH_HOT_ONLY !== '0';
 const RR_UPGRADE_ENABLED = process.env.RR_UPGRADE_ENABLED !== '0';
-const RR_UPGRADE_BATCH_SIZE = parseInt(process.env.RR_UPGRADE_BATCH_SIZE) || 5;
+const RR_UPGRADE_BATCH_SIZE = parseInt(process.env.RR_UPGRADE_BATCH_SIZE) || 15;
 const RR_UPGRADE_STATE_FILE = join(__dirname, '.rr-upgrade-state.json');
 const SERVICE_TYPES = [
     'Police', 'Fire', 'EMS', 'Ham Radio', 'Railroad', 'Air', 'Marine',
@@ -577,6 +577,7 @@ async function runNightlyRrUpgradePass() {
     console.log('  BOY & A SCANNER — NIGHTLY RR CACHE UPGRADE');
     console.log(`  Batch size: ${RR_UPGRADE_BATCH_SIZE}`);
     console.log(`  Last cursor: ${state.lastSearchKey || 'start of list'}`);
+    console.log(`  Failed retry queue: ${state.failedSearchKeys.length}`);
     console.log(`  Started: ${new Date().toISOString()}`);
     console.log('═══════════════════════════════════════════════════════════');
 
@@ -584,32 +585,44 @@ async function runNightlyRrUpgradePass() {
     console.log(`  Found ${candidates.length} AI-only ZIP cache rows eligible for RR upgrade.`);
 
     if (candidates.length === 0) {
-        saveRrUpgradeState({ lastSearchKey: null, lastRunAt: new Date().toISOString() });
+        saveRrUpgradeState({ lastSearchKey: null, lastRunAt: new Date().toISOString(), failedSearchKeys: [] });
         console.log('  Nothing to upgrade.');
         return;
     }
 
-    const batch = selectRrUpgradeBatch(candidates, RR_UPGRADE_BATCH_SIZE, state.lastSearchKey);
+    const retryBatch = selectEntriesBySearchKeys(candidates, state.failedSearchKeys, RR_UPGRADE_BATCH_SIZE);
+    const retryKeys = new Set(retryBatch.map((entry) => entry.search_key));
+    const remainingSlots = Math.max(0, RR_UPGRADE_BATCH_SIZE - retryBatch.length);
+    const sequentialBatch = selectRrUpgradeBatch(candidates, remainingSlots, state.lastSearchKey, retryKeys);
+    const batch = [...retryBatch, ...sequentialBatch];
+
+    if (retryBatch.length > 0) {
+        console.log(`  Retrying ${retryBatch.length} failed RR rows first.`);
+    }
     console.log(`  Processing ${batch.length} rows this run.`);
 
     let upgraded = 0;
     let skipped = 0;
     let failed = 0;
     let lastProcessedKey = state.lastSearchKey;
+    const nextFailedKeys = [];
 
     for (let i = 0; i < batch.length; i++) {
         const entry = batch[i];
         const zip = extractZipFromSearchKey(entry.search_key);
         const progress = `[${i + 1}/${batch.length}]`;
+        const isRetry = retryKeys.has(entry.search_key);
 
         if (!zip) {
             console.log(`${progress} ${entry.search_key} — SKIP (not a ZIP cache key)`);
             skipped++;
-            lastProcessedKey = entry.search_key;
+            if (!isRetry) {
+                lastProcessedKey = entry.search_key;
+            }
             continue;
         }
 
-        console.log(`${progress} ${zip} — upgrading AI cache with RadioReference...`);
+        console.log(`${progress} ${zip} — upgrading AI cache with RadioReference${isRetry ? ' (retry)' : ''}...`);
 
         try {
             const rrData = await fetchFromRadioReference(zip);
@@ -630,16 +643,23 @@ async function runNightlyRrUpgradePass() {
         } catch (error) {
             console.error(`   └─ ❌ Error: ${error.message}`);
             failed++;
+            nextFailedKeys.push(entry.search_key);
         }
 
-        lastProcessedKey = entry.search_key;
+        if (!isRetry) {
+            lastProcessedKey = entry.search_key;
+        }
 
         if (i < batch.length - 1) {
             await sleep(DELAY_MS);
         }
     }
 
-    saveRrUpgradeState({ lastSearchKey: lastProcessedKey, lastRunAt: new Date().toISOString() });
+    saveRrUpgradeState({
+        lastSearchKey: lastProcessedKey,
+        lastRunAt: new Date().toISOString(),
+        failedSearchKeys: Array.from(new Set(nextFailedKeys)),
+    });
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log('');
@@ -649,6 +669,7 @@ async function runNightlyRrUpgradePass() {
     console.log(`  ❌ Failed:   ${failed}`);
     console.log(`  ⏱️  Elapsed:  ${elapsed}s`);
     console.log(`  Next cursor: ${lastProcessedKey || 'start of list'}`);
+    console.log(`  Retry next run: ${nextFailedKeys.length}`);
 }
 
 // ─── Main Loop ────────────────────────────────────────────────────────────────
@@ -896,14 +917,39 @@ async function fetchAiOnlyZipCacheEntries() {
 }
 
 function loadRrUpgradeState() {
-    return readJsonFileIfExists(RR_UPGRADE_STATE_FILE) || { lastSearchKey: null, lastRunAt: null };
+    const state = readJsonFileIfExists(RR_UPGRADE_STATE_FILE) || {};
+    return {
+        lastSearchKey: typeof state.lastSearchKey === 'string' ? state.lastSearchKey : null,
+        lastRunAt: typeof state.lastRunAt === 'string' ? state.lastRunAt : null,
+        failedSearchKeys: Array.isArray(state.failedSearchKeys)
+            ? state.failedSearchKeys.filter((value) => typeof value === 'string')
+            : [],
+    };
 }
 
 function saveRrUpgradeState(state) {
     writeJsonFile(RR_UPGRADE_STATE_FILE, state);
 }
 
-function selectRrUpgradeBatch(entries, batchSize, lastSearchKey) {
+function selectEntriesBySearchKeys(entries, searchKeys, batchSize) {
+    if (!Array.isArray(searchKeys) || searchKeys.length === 0 || batchSize <= 0) return [];
+
+    const byKey = new Map(entries.map((entry) => [entry.search_key, entry]));
+    const selected = [];
+    const seen = new Set();
+
+    for (const searchKey of searchKeys) {
+        const entry = byKey.get(searchKey);
+        if (!entry || seen.has(searchKey)) continue;
+        seen.add(searchKey);
+        selected.push(entry);
+        if (selected.length >= batchSize) break;
+    }
+
+    return selected;
+}
+
+function selectRrUpgradeBatch(entries, batchSize, lastSearchKey, excludedKeys = new Set()) {
     if (entries.length === 0 || batchSize <= 0) return [];
 
     let startIndex = 0;
@@ -918,7 +964,7 @@ function selectRrUpgradeBatch(entries, batchSize, lastSearchKey) {
     for (let offset = 0; offset < entries.length && selected.length < batchSize; offset++) {
         const index = (startIndex + offset) % entries.length;
         const entry = entries[index];
-        if (seen.has(entry.search_key)) continue;
+        if (seen.has(entry.search_key) || excludedKeys.has(entry.search_key)) continue;
         seen.add(entry.search_key);
         selected.push(entry);
     }
