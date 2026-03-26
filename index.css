@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* Boy & A Scanner - Custom Animations and Utilities */
 
 /* Fade-in animation */
