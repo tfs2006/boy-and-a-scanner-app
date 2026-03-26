@@ -158,4 +158,11 @@ describe('app export status notices', () => {
       expect(searchFrequencies).toHaveBeenLastCalledWith('12345', ['Police', 'Fire', 'EMS'], { username: 'demo', password: 'secret' }, expect.any(AbortSignal), { bypassCache: true });
     });
   });
+
+  it('completes a standard search without surfacing a runtime reference error', async () => {
+    await renderAppForExportTest();
+
+    expect(screen.queryByText('coordString is not defined')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Copy Conventional Frequencies for Uniden Sentinel (Paste)')).toBeInTheDocument();
+  });
 });

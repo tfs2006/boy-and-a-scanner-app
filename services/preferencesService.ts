@@ -37,7 +37,7 @@ async function readFromSupabase(userId: string): Promise<ServiceType[] | null> {
       .from('user_preferences')
       .select('default_service_types')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
 
     if (rememberMissingOptionalTable(USER_PREFERENCES_TABLE, error)) return null;
     if (error || !data) return null;

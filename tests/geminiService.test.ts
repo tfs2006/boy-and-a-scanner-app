@@ -135,7 +135,7 @@ describe('geminiService hybrid flows', () => {
         : null,
       error: key === 'v6_loc_84770' ? null : { message: 'Not found' },
     }));
-    const eq = vi.fn((_: string, key: string) => ({ single: () => single(key) }));
+    const eq = vi.fn((_: string, key: string) => ({ maybeSingle: () => single(key) }));
     const select = vi.fn().mockReturnValue({ eq });
     const upsert = vi.fn().mockResolvedValue({ error: null });
     const from = vi.fn().mockReturnValue({ select, upsert });
@@ -185,7 +185,7 @@ describe('geminiService hybrid flows', () => {
         : null,
       error: key === 'v7_loc_county_washington_ut' ? null : { message: 'Not found' },
     }));
-    const eq = vi.fn((_: string, key: string) => ({ single: () => single(key) }));
+    const eq = vi.fn((_: string, key: string) => ({ maybeSingle: () => single(key) }));
     const select = vi.fn().mockReturnValue({ eq });
     const upsert = vi.fn().mockResolvedValue({ error: null });
     const from = vi.fn().mockReturnValue({ select, upsert });
@@ -241,7 +241,7 @@ describe('geminiService hybrid flows', () => {
         : null,
       error: key === 'v7_loc_county_washington_ut' ? null : { message: 'Not found' },
     }));
-    const eq = vi.fn((_: string, key: string) => ({ single: () => single(key) }));
+    const eq = vi.fn((_: string, key: string) => ({ maybeSingle: () => single(key) }));
     const select = vi.fn().mockReturnValue({ eq });
     const from = vi.fn().mockReturnValue({ select });
 
@@ -289,7 +289,7 @@ describe('geminiService hybrid flows', () => {
       },
       error: null,
     });
-    const eq = vi.fn().mockReturnValue({ single });
+    const eq = vi.fn().mockReturnValue({ maybeSingle: single });
     const select = vi.fn().mockReturnValue({ eq });
     const upsert = vi.fn().mockResolvedValue({ error: null });
     const from = vi.fn().mockReturnValue({ select, upsert });
@@ -346,7 +346,7 @@ describe('geminiService hybrid flows', () => {
       },
       error: null,
     });
-    const eq = vi.fn().mockReturnValue({ single });
+    const eq = vi.fn().mockReturnValue({ maybeSingle: single });
     const select = vi.fn().mockReturnValue({ eq });
     const upsert = vi.fn().mockResolvedValue({ error: null });
     const from = vi.fn().mockReturnValue({ select, upsert });

@@ -59,7 +59,7 @@ describe('optional Supabase tables', () => {
     const from = vi.fn(() => ({
       select: vi.fn(() => ({
         eq: () => ({
-          single: async () => ({ data: null, error: { ...missingTableError, message: 'Could not find the table public.user_preferences in the schema cache' } }),
+          maybeSingle: async () => ({ data: null, error: { ...missingTableError, message: 'Could not find the table public.user_preferences in the schema cache' } }),
         }),
       })),
       upsert: vi.fn(async () => ({ error: { ...missingTableError, message: 'Could not find the table public.user_preferences in the schema cache' } })),

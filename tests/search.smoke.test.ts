@@ -21,11 +21,11 @@ describe('search smoke', () => {
       trunkedSystems: [],
     };
 
-    const single = vi.fn().mockResolvedValue({
+    const maybeSingle = vi.fn().mockResolvedValue({
       data: { result_data: cachedResult, grounding_chunks: [{ web: { uri: 'https://example.com', title: 'Source' } }] },
       error: null,
     });
-    const eq = vi.fn().mockReturnValue({ single });
+    const eq = vi.fn().mockReturnValue({ maybeSingle });
     const select = vi.fn().mockReturnValue({ eq });
     const from = vi.fn().mockReturnValue({ select });
 

@@ -753,14 +753,12 @@ function App() {
           });
         }
         saveSearchToHistory(query);
-          const searchOptions = buildSearchOptions();
         setTimeout(updateStats, 1000);
-            await performAiSearch(coordString, controller.signal, requestId, searchOptions);
-        // Enhance error for ambiguous locations
+      } else {
         if (!isZip && !query.includes(',')) {
           setError(`Could not pinpoint "${query}". Try adding a State (e.g., "${query}, CA") or ZIP code.`);
         } else {
-          setError("Could not extract radio data for this location.");
+          setError('Could not extract radio data for this location.');
         }
       }
     } catch (e: any) {

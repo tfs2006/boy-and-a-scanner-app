@@ -49,7 +49,7 @@ async function getFromCache(key: string): Promise<any | null> {
       .from('search_cache')
       .select('result_data, grounding_chunks, updated_at')
       .eq('search_key', key)
-      .single();
+      .maybeSingle();
 
     if (error || !data) return null;
 
