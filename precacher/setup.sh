@@ -1,99 +1,127 @@
 #!/bin/bash
-# ═══════════════════════════════════════════════════════════
-#  Boy & A Scanner — Pre-Cacher Setup Script
-#  Run this on the Oracle Cloud VM (Ubuntu 22.04)
-# ═══════════════════════════════════════════════════════════
 
-set -e
+set -euo pipefail
 
 INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_BASE="precacher"
 
-echo "═══════════════════════════════════════════════════════"
-echo "  BOY & A SCANNER — PRE-CACHER SETUP"
+echo "======================================================="
+echo "  BOY & A SCANNER PRE-CACHER SETUP"
 echo "  Install dir: $INSTALL_DIR"
-echo "═══════════════════════════════════════════════════════"
+echo "======================================================="
 
-# ─── Step 1: Install Node.js 20 LTS + git ─────────────────
-
-if ! command -v node &> /dev/null || [[ $(node -v | cut -d'.' -f1 | tr -d 'v') -lt 20 ]]; then
-  echo ""
-  echo "▸ Installing Node.js 20 LTS..."
+if ! command -v node >/dev/null 2>&1 || [[ $(node -v | cut -d'.' -f1 | tr -d 'v') -lt 20 ]]; then
+  echo
+  echo "> Installing Node.js 20 LTS..."
   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
   sudo apt-get install -y nodejs
 else
-  echo "▸ Node.js $(node -v) already installed ✓"
+  echo "> Node.js $(node -v) already installed"
 fi
 
-if ! command -v git &> /dev/null; then
-  echo "▸ Installing git..."
+if ! command -v git >/dev/null 2>&1; then
+  echo "> Installing git..."
   sudo apt-get install -y git
 else
-  echo "▸ git $(git --version | awk '{print $3}') already installed ✓"
+  echo "> git $(git --version | awk '{print $3}') already installed"
 fi
 
-# ─── Step 2: Install npm dependencies ─────────────────────
-
-echo ""
-echo "▸ Installing npm dependencies..."
+echo
+echo "> Installing npm dependencies..."
 cd "$INSTALL_DIR"
 npm install --production
 
-# ─── Step 3: Check .env ───────────────────────────────────
-
-if [ ! -f "$INSTALL_DIR/.env" ]; then
-  echo ""
-  echo "▸ Creating .env from template..."
+if [[ ! -f "$INSTALL_DIR/.env" ]]; then
+  echo
+  echo "> Creating .env from template..."
   cp "$INSTALL_DIR/.env.example" "$INSTALL_DIR/.env"
-  echo ""
-  echo "╔══════════════════════════════════════════════════════╗"
-  echo "║  ⚠️  IMPORTANT: Edit .env with your credentials!    ║"
-  echo "║                                                      ║"
-  echo "║  nano $INSTALL_DIR/.env                              ║"
-  echo "║                                                      ║"
-  echo "║  Required:                                           ║"
-  echo "║    GEMINI_API_KEY=...                                ║"
-  echo "║    SUPABASE_URL=...                                  ║"
-  echo "║    SUPABASE_ANON_KEY=...                             ║"
-  echo "║                                                      ║"
-  echo "║  For SEO page publishing (optional but recommended): ║"
-  echo "║    GITHUB_TOKEN=...   (repo scope PAT)               ║"
-  echo "║    GITHUB_REPO=...    (e.g. youruser/scanner-pages)  ║"
-  echo "║    SEO_SITE_URL=...   (https://www.yoursite.com)     ║"
-  echo "╚══════════════════════════════════════════════════════╝"
-  echo ""
-  echo "After editing .env, run this script again to finish setup."
+  cat <<MSG
+
+IMPORTANT: edit $INSTALL_DIR/.env before rerunning this script.
+
+Required values:
+  AI_PROVIDER=gemini | openrouter
+  GEMINI_API_KEY=...            if using Gemini
+  OPENROUTER_API_KEY=...        if using OpenRouter
+  SUPABASE_URL=...
+  SUPABASE_ANON_KEY=...
+  AI_MODEL=...                  optional custom model id
+  APP_BASE_URL=https://app.boyandascanner.com
+  RR_REFRESH_ENABLED=1          optional, hot ZIPs only
+  RR_USERNAME=...
+  RR_PASSWORD=...
+
+Optional SEO publishing values:
+  GITHUB_TOKEN=...
+  GITHUB_REPO=youruser/scanner-pages
+  SEO_SITE_URL=https://www.yoursite.com
+
+Run:
+  nano $INSTALL_DIR/.env
+
+MSG
   exit 0
 fi
 
-# Verify credentials exist
-source "$INSTALL_DIR/.env" 2>/dev/null || true
-if [[ -z "$GEMINI_API_KEY" || "$GEMINI_API_KEY" == "your_gemini_api_key_here" ]]; then
-  echo ""
-  echo "❌ GEMINI_API_KEY is not set in .env. Please edit it first:"
-  echo "   nano $INSTALL_DIR/.env"
+set -a
+source "$INSTALL_DIR/.env"
+set +a
+
+AI_PROVIDER="${AI_PROVIDER:-gemini}"
+CACHE_ON_CALENDAR="${CACHE_ON_CALENDAR:-Mon *-*-* 08:00:00}"
+SEO_ON_CALENDAR="${SEO_ON_CALENDAR:-Mon *-*-* 08:30:00}"
+
+case "$AI_PROVIDER" in
+  openrouter)
+    if [[ -z "${OPENROUTER_API_KEY:-}" || "${OPENROUTER_API_KEY:-}" == "your_openrouter_api_key_here" ]]; then
+      echo
+      echo "ERROR: OPENROUTER_API_KEY is required when AI_PROVIDER=openrouter."
+      echo "Edit: $INSTALL_DIR/.env"
+      exit 1
+    fi
+    ;;
+  gemini)
+    if [[ -z "${GEMINI_API_KEY:-}" || "${GEMINI_API_KEY:-}" == "your_gemini_api_key_here" ]]; then
+      echo
+      echo "ERROR: GEMINI_API_KEY is required when AI_PROVIDER=gemini."
+      echo "Edit: $INSTALL_DIR/.env"
+      exit 1
+    fi
+    ;;
+  *)
+    echo
+    echo "ERROR: AI_PROVIDER must be 'gemini' or 'openrouter'."
+    echo "Current value: $AI_PROVIDER"
+    exit 1
+    ;;
+esac
+
+if [[ -z "${SUPABASE_URL:-}" || -z "${SUPABASE_ANON_KEY:-}" ]]; then
+  echo
+  echo "ERROR: SUPABASE_URL and SUPABASE_ANON_KEY are required."
+  echo "Edit: $INSTALL_DIR/.env"
   exit 1
 fi
 
-echo "▸ .env found with credentials ✓"
+echo "> .env found with required credentials"
 
-# Warn if SEO vars are missing (non-fatal)
-if [[ -z "$GITHUB_TOKEN" || "$GITHUB_TOKEN" == "your_github_token_here" ]]; then
-  echo ""
-  echo "  ℹ️  GITHUB_TOKEN not set — SEO page publishing will be skipped."
-  echo "     To enable it, add to .env:"
-  echo "       GITHUB_TOKEN=ghp_..."
-  echo "       GITHUB_REPO=youruser/scanner-seo-pages"
-  echo "       SEO_SITE_URL=https://www.boyandascanner.com"
-  echo ""
+if [[ -z "${GITHUB_TOKEN:-}" || "${GITHUB_TOKEN:-}" == "your_github_token_here" ]]; then
+  cat <<MSG
+
+INFO: GITHUB_TOKEN not set. SEO publishing will be skipped until you add:
+  GITHUB_TOKEN=ghp_...
+  GITHUB_REPO=youruser/scanner-seo-pages
+  SEO_SITE_URL=https://www.boyandascanner.com
+
+MSG
 fi
 
-echo ""
-echo "▸ Creating split systemd services..."
+echo
+echo "> Creating systemd services..."
 
 sudo tee /etc/systemd/system/${SERVICE_BASE}-cache.service > /dev/null <<EOF
 [Unit]
-Description=Boy & A Scanner Cache Warmer
+Description=Boy and a Scanner Cache Warmer
 After=network-online.target
 Wants=network-online.target
 
@@ -113,7 +141,7 @@ EOF
 
 sudo tee /etc/systemd/system/${SERVICE_BASE}-seo.service > /dev/null <<EOF
 [Unit]
-Description=Boy & A Scanner SEO Publisher
+Description=Boy and a Scanner SEO Publisher
 After=network-online.target
 Wants=network-online.target
 
@@ -131,16 +159,14 @@ TimeoutStartSec=7200
 WantedBy=multi-user.target
 EOF
 
-# ─── Step 5: Create systemd timer ─────────────────────────
-
-echo "▸ Creating split systemd timers (cache at 3 AM UTC, SEO at 3:30 AM UTC)..."
+echo "> Creating systemd timers..."
 
 sudo tee /etc/systemd/system/${SERVICE_BASE}-cache.timer > /dev/null <<EOF
 [Unit]
-Description=Run Boy & A Scanner cache warmer daily
+Description=Run Boy and a Scanner cache warmer weekly
 
 [Timer]
-OnCalendar=*-*-* 03:00:00
+OnCalendar=${CACHE_ON_CALENDAR}
 Persistent=true
 RandomizedDelaySec=600
 
@@ -150,10 +176,10 @@ EOF
 
 sudo tee /etc/systemd/system/${SERVICE_BASE}-seo.timer > /dev/null <<EOF
 [Unit]
-Description=Run Boy & A Scanner SEO publisher daily
+Description=Run Boy and a Scanner SEO publisher weekly
 
 [Timer]
-OnCalendar=*-*-* 03:30:00
+OnCalendar=${SEO_ON_CALENDAR}
 Persistent=true
 RandomizedDelaySec=600
 
@@ -161,27 +187,28 @@ RandomizedDelaySec=600
 WantedBy=timers.target
 EOF
 
-# ─── Step 6: Enable and start ─────────────────────────────
-
-echo "▸ Enabling split systemd timers..."
+echo "> Enabling systemd timers..."
 sudo systemctl daemon-reload
 sudo systemctl disable --now ${SERVICE_BASE}.timer 2>/dev/null || true
 sudo systemctl enable ${SERVICE_BASE}-cache.timer
 sudo systemctl enable ${SERVICE_BASE}-seo.timer
 
-echo ""
-echo "═══════════════════════════════════════════════════════"
-echo "  ✅ SETUP COMPLETE!"
-echo ""
-echo "  Commands:"
-echo "    Start cache timer:   sudo systemctl start precacher-cache.timer"
-echo "    Start SEO timer:     sudo systemctl start precacher-seo.timer"
-echo "    Run once manually:   node precacher.mjs --test"
-echo "    Run cache only:      node precacher.mjs --cache-only"
-echo "    Run full manually:   node precacher.mjs"
-echo "    SEO only:            node precacher.mjs --seo-only"
-echo "    Check timers:        systemctl status precacher-cache.timer precacher-seo.timer"
-echo "    View cache logs:     journalctl -u precacher-cache.service -f"
-echo "    View SEO logs:       journalctl -u precacher-seo.service -f"
-echo "    Stop timers:         sudo systemctl stop precacher-cache.timer precacher-seo.timer"
-echo "═══════════════════════════════════════════════════════"
+cat <<MSG
+
+=======================================================
+SETUP COMPLETE
+
+Commands:
+  Start cache timer:   sudo systemctl start precacher-cache.timer
+  Start SEO timer:     sudo systemctl start precacher-seo.timer
+  Run once manually:   node precacher.mjs --test
+  Run cache only:      node precacher.mjs --cache-only
+  Run full manually:   node precacher.mjs
+  SEO only:            node precacher.mjs --seo-only
+  Check timers:        systemctl status precacher-cache.timer precacher-seo.timer
+  View cache logs:     journalctl -u precacher-cache.service -f
+  View SEO logs:       journalctl -u precacher-seo.service -f
+  Stop timers:         sudo systemctl stop precacher-cache.timer precacher-seo.timer
+=======================================================
+
+MSG

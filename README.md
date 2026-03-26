@@ -233,6 +233,8 @@ Current cache-warming strategy:
 - **Hot ZIPs** — ZIPs discovered from recent searches, user favorites, and community frequency activity
 - **Warm ZIPs** — seed coverage ZIPs from `precacher/zipcodes.json`
 - **Different refresh windows** — hot ZIPs refresh more aggressively than warm ZIPs
+- **Seed expansion over time** — hot ZIPs can be appended back into `precacher/zipcodes.json` so weekly runs steadily broaden coverage from real demand
+- **Optional RR assist for hot ZIPs** — bounded weekly refreshes can call the app's `/api/rrdb` endpoint for high-value ZIPs only when RR credentials are configured on the Oracle VM
 - **ZIP-only SEO pages** — the SEO publisher generates pages only from ZIP cache entries (`v6_loc_#####`)
 - **Independent execution** — cache warming and SEO publishing run on separate timers so one can succeed without the other
 
@@ -242,7 +244,7 @@ Search behavior notes:
 - If a text query resolves to a primary ZIP and the user has RadioReference credentials, the app can use that ZIP for a verified RR lookup instead of falling back to AI-only coverage
 
 - **Script:** `precacher/precacher.mjs`
-- **Schedule:** Cache timer daily at 3:00 AM UTC, SEO timer daily at 3:30 AM UTC (configured by `precacher/setup.sh`)
+- **Schedule:** Cache timer Monday at 8:00 AM UTC, SEO timer Monday at 8:30 AM UTC by default (configurable via `CACHE_ON_CALENDAR` / `SEO_ON_CALENDAR` in `precacher/.env`)
 - **ZIP list:** `precacher/zipcodes.json`
 
 To deploy/update the precacher:
@@ -258,15 +260,31 @@ ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --seo-onl
 ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --test"
 ```
 
-The precacher needs its own `.env` containing `GEMINI_API_KEY`, `SUPABASE_URL`, and `SUPABASE_ANON_KEY`.
+The precacher needs its own `.env` containing an AI provider key plus `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+
+AI provider options for the precacher:
+
+- **Gemini** — set `AI_PROVIDER=gemini` and `GEMINI_API_KEY=...`
+- **OpenRouter / Kimi** — set `AI_PROVIDER=openrouter`, `OPENROUTER_API_KEY=...`, and `AI_MODEL=moonshotai/kimi-k2` (or another supported Kimi model id)
+
+Optional RR-assisted weekly refresh for hot ZIPs:
+
+- Set `RR_REFRESH_ENABLED=1`
+- Set `APP_BASE_URL=https://app.boyandascanner.com`
+- Set `RR_USERNAME` / `RR_PASSWORD` on the Oracle VM only
+- Leave `RR_REFRESH_HOT_ONLY=1` to keep the RR pass bounded to hot-demand ZIPs
 
 Important precacher env vars:
 
 | Variable | Purpose |
 |----------|---------|
-| `GEMINI_API_KEY` | Gemini API key used by the Oracle worker |
+| `AI_PROVIDER` | `gemini` or `openrouter` |
+| `AI_MODEL` | Model id used by the selected AI provider |
+| `GEMINI_API_KEY` | Gemini API key used when `AI_PROVIDER=gemini` |
+| `OPENROUTER_API_KEY` | OpenRouter API key used when `AI_PROVIDER=openrouter` |
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_ANON_KEY` | Supabase anon key for cache read/write |
+| `APP_BASE_URL` | Deployed app URL used for bounded `/api/rrdb` refreshes |
 | `DELAY_SECONDS` | Delay between Gemini requests |
 | `HOT_MAX_AGE_HOURS` | Refresh window for high-value ZIPs |
 | `WARM_MAX_AGE_HOURS` | Refresh window for seed ZIPs |
@@ -274,6 +292,12 @@ Important precacher env vars:
 | `MAX_RECENT_SEARCH_ZIPS` | Max recent searched ZIPs included in each run |
 | `MAX_FAVORITE_ZIPS` | Max favorite ZIPs included in each run |
 | `MAX_REPORT_ZIPS` | Max ZIPs pulled from community activity |
+| `EXPAND_SEED_ZIPS` | Persist newly hot ZIPs back into the seed file |
+| `RR_REFRESH_ENABLED` | Enable bounded RR refreshes during weekly cache runs |
+| `RR_REFRESH_HOT_ONLY` | Limit RR refreshes to hot ZIPs only |
+| `RR_USERNAME` / `RR_PASSWORD` | RR credentials used only by the Oracle worker |
+| `CACHE_ON_CALENDAR` | systemd `OnCalendar` schedule for weekly cache runs |
+| `SEO_ON_CALENDAR` | systemd `OnCalendar` schedule for weekly SEO runs |
 | `GITHUB_TOKEN` | GitHub PAT used for SEO repo publishing |
 | `GITHUB_REPO` | SEO repo target such as `user/repo` |
 | `SEO_SITE_URL` | Canonical site URL used in generated SEO pages |

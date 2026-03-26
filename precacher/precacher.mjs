@@ -25,7 +25,13 @@ import { dirname, join } from 'path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ZIPCODES = JSON.parse(readFileSync(join(__dirname, 'zipcodes.json'), 'utf-8'));
 
+const AI_PROVIDER = (process.env.AI_PROVIDER || 'gemini').trim().toLowerCase();
+const AI_MODEL = process.env.AI_MODEL?.trim() || (AI_PROVIDER === 'openrouter' ? 'moonshotai/kimi-k2' : 'gemini-2.0-flash');
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+const OPENROUTER_SITE_URL = process.env.OPENROUTER_SITE_URL || 'https://www.boyandascanner.com';
+const OPENROUTER_APP_NAME = process.env.OPENROUTER_APP_NAME || 'Boy & A Scanner Precacher';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
 const DELAY_MS = (parseInt(process.env.DELAY_SECONDS) || 5) * 1000;
@@ -35,7 +41,13 @@ const MAX_SEED_ZIPS = parseInt(process.env.MAX_SEED_ZIPS) || 150;
 const MAX_RECENT_SEARCH_ZIPS = parseInt(process.env.MAX_RECENT_SEARCH_ZIPS) || 125;
 const MAX_FAVORITE_ZIPS = parseInt(process.env.MAX_FAVORITE_ZIPS) || 75;
 const MAX_REPORT_ZIPS = parseInt(process.env.MAX_REPORT_ZIPS) || 75;
-const MODEL_NAME = 'gemini-2.0-flash';
+const EXPAND_SEED_ZIPS = process.env.EXPAND_SEED_ZIPS !== '0';
+const MAX_SEED_APPEND_PER_RUN = parseInt(process.env.MAX_SEED_APPEND_PER_RUN) || 40;
+const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+const RR_USERNAME = process.env.RR_USERNAME;
+const RR_PASSWORD = process.env.RR_PASSWORD;
+const RR_REFRESH_ENABLED = process.env.RR_REFRESH_ENABLED === '1';
+const RR_REFRESH_HOT_ONLY = process.env.RR_REFRESH_HOT_ONLY !== '0';
 const SERVICE_TYPES = [
     'Police', 'Fire', 'EMS', 'Ham Radio', 'Railroad', 'Air', 'Marine',
     'Federal', 'Military', 'Public Works', 'Utilities', 'Transportation',
@@ -54,11 +66,22 @@ const IS_CACHE_ONLY = process.argv.includes('--cache-only');
 
 // ─── Validate ─────────────────────────────────────────────────────────────────
 
-if (!GEMINI_API_KEY || !SUPABASE_URL || !SUPABASE_KEY) {
+if (!SUPABASE_URL || !SUPABASE_KEY) {
     console.error('❌ Missing env vars. Copy .env.example to .env and fill in your credentials.');
     process.exit(1);
 }
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+
+if (AI_PROVIDER === 'gemini' && !GEMINI_API_KEY) {
+    console.error('❌ GEMINI_API_KEY is required when AI_PROVIDER=gemini.');
+    process.exit(1);
+}
+
+if (AI_PROVIDER === 'openrouter' && !OPENROUTER_API_KEY) {
+    console.error('❌ OPENROUTER_API_KEY is required when AI_PROVIDER=openrouter.');
+    process.exit(1);
+}
+
+const ai = AI_PROVIDER === 'gemini' ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 function normalizeZip(value) {
@@ -119,6 +142,27 @@ function logPrioritySummary(priorityStats) {
         const stats = priorityStats[priority];
         console.log(`  ${priority.padEnd(4)} cached=${stats.cached} skipped=${stats.skipped} failed=${stats.failed}`);
     }
+}
+
+function persistExpandedZipSeeds(plan) {
+    if (!EXPAND_SEED_ZIPS || IS_TEST || plan.length === 0) return 0;
+
+    const current = new Set(ZIPCODES.map(normalizeZip).filter(Boolean));
+    const additions = [];
+
+    for (const item of plan) {
+        if (additions.length >= MAX_SEED_APPEND_PER_RUN) break;
+        if (item.priority !== 'hot' || current.has(item.zip)) continue;
+
+        current.add(item.zip);
+        additions.push(item.zip);
+    }
+
+    if (additions.length === 0) return 0;
+
+    const nextZipcodes = Array.from(current).sort();
+    writeFileSync(join(__dirname, 'zipcodes.json'), `${JSON.stringify(nextZipcodes, null, 2)}\n`, 'utf-8');
+    return additions.length;
 }
 
 // ─── Dynamic ZIP Discovery ──────────────────────────────────────────────────
@@ -267,6 +311,58 @@ async function saveToCache(cacheKey, resultData, groundingChunks) {
     return true;
 }
 
+function normalizeName(str) {
+    return String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function mergeResults(rr, aiResult) {
+    const merged = JSON.parse(JSON.stringify(rr));
+    merged.source = 'API';
+    merged.summary = `${rr.summary || rr.locationName || 'RadioReference data'} (Enhanced with AI discovery)`;
+
+    const existingAgencies = new Set((merged.agencies || []).map((agency) => normalizeName(agency.name)));
+    for (const agency of aiResult?.agencies || []) {
+        const key = normalizeName(agency.name);
+        if (!existingAgencies.has(key)) {
+            merged.agencies.push(agency);
+            existingAgencies.add(key);
+        }
+    }
+
+    const existingSystems = new Set((merged.trunkedSystems || []).map((system) => normalizeName(system.name)));
+    for (const system of aiResult?.trunkedSystems || []) {
+        const key = normalizeName(system.name);
+        if (!existingSystems.has(key)) {
+            merged.trunkedSystems.push(system);
+            existingSystems.add(key);
+        }
+    }
+
+    return merged;
+}
+
+async function fetchFromRadioReference(zip) {
+    if (!RR_REFRESH_ENABLED || !RR_USERNAME || !RR_PASSWORD || !APP_BASE_URL) return null;
+
+    const response = await fetch(`${APP_BASE_URL}/api/rrdb`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            zipcode: zip,
+            rrUsername: RR_USERNAME,
+            rrPassword: RR_PASSWORD,
+            serviceTypes: SERVICE_TYPES,
+        }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(payload.error || `RadioReference refresh failed (${response.status})`);
+    }
+
+    return payload?.data || null;
+}
+
 // ─── Gemini Prompt (mirrors api/search.ts) ────────────────────────────────────
 
 function buildPrompt(zip) {
@@ -381,6 +477,67 @@ async function fetchFromGemini(zip) {
     return { data, groundingChunks };
 }
 
+async function fetchFromOpenRouter(zip) {
+    const prompt = buildPrompt(zip);
+    const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+            'HTTP-Referer': OPENROUTER_SITE_URL,
+            'X-Title': OPENROUTER_APP_NAME,
+        },
+        body: JSON.stringify({
+            model: AI_MODEL,
+            temperature: 0.1,
+            messages: [
+                { role: 'system', content: 'Return only the requested JSON payload inside a json code block. Do not add prose.' },
+                { role: 'user', content: prompt },
+            ],
+        }),
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(payload?.error?.message || payload?.message || `OpenRouter request failed (${response.status})`);
+    }
+
+    const text = payload?.choices?.[0]?.message?.content || '{}';
+    let data = null;
+
+    try {
+        const match = text.match(/```json\n([\s\S]*?)(\n```|$)/);
+        if (match && match[1]) {
+            data = JSON.parse(match[1]);
+        } else {
+            data = JSON.parse(text);
+        }
+    } catch {
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        if (start !== -1 && end !== -1) {
+            try { data = JSON.parse(text.substring(start, end + 1)); } catch { }
+        }
+    }
+
+    if (data) {
+        data.source = 'AI';
+        if (!Array.isArray(data.agencies)) data.agencies = [];
+        if (!Array.isArray(data.trunkedSystems)) data.trunkedSystems = [];
+        data.agencies.forEach((agency) => { if (!Array.isArray(agency.frequencies)) agency.frequencies = []; });
+        data.trunkedSystems.forEach((system) => {
+            if (!Array.isArray(system.talkgroups)) system.talkgroups = [];
+            if (!Array.isArray(system.frequencies)) system.frequencies = [];
+        });
+    }
+
+    return { data, groundingChunks: [] };
+}
+
+async function fetchFromAi(zip) {
+    return AI_PROVIDER === 'openrouter' ? fetchFromOpenRouter(zip) : fetchFromGemini(zip);
+}
+
 // ─── Main Loop ────────────────────────────────────────────────────────────────
 
 async function run() {
@@ -393,6 +550,10 @@ async function run() {
         } else {
             console.log('  Building ZIP refresh plan from seed, recent searches, favorites, and community activity...');
             zipPlan = await buildZipPlan();
+            const expandedBy = persistExpandedZipSeeds(zipPlan);
+            if (expandedBy > 0) {
+                console.log(`  Expanded seed ZIP list by ${expandedBy} new hot ZIPs for future weekly runs.`);
+            }
         }
     }
 
@@ -413,11 +574,15 @@ async function run() {
     console.log('  BOY & A SCANNER — PRE-CACHER + SEO GENERATOR');
     console.log(`  Mode: ${modeLabel}`);
     if (!IS_SEO_ONLY) {
+        console.log(`  AI provider/model: ${AI_PROVIDER}/${AI_MODEL}`);
         console.log(`  Delay: ${DELAY_MS / 1000}s between calls`);
         console.log(`  Hot ZIP max age: ${HOT_MAX_AGE_MS / 3600000}h`);
         console.log(`  Warm ZIP max age: ${WARM_MAX_AGE_MS / 3600000}h`);
         console.log(`  ZIP plan: ${planSummary.hot} hot, ${planSummary.warm} warm`);
         console.log(`  ZIP signals: ${Object.entries(reasonCounts).map(([reason, count]) => `${reason}=${count}`).join(', ') || 'none'}`);
+        if (RR_REFRESH_ENABLED) {
+            console.log(`  RR weekly assist: ${RR_REFRESH_HOT_ONLY ? 'hot ZIPs only' : 'all ZIPs'} via ${APP_BASE_URL || 'APP_BASE_URL not set'}`);
+        }
     }
     console.log(`  Started: ${new Date().toISOString()}`);
     console.log('═══════════════════════════════════════════════════════════');
@@ -449,17 +614,31 @@ async function run() {
                 continue;
             }
 
-            console.log(`${progress} ${zip} — fetching from Gemini... (${priority}, ${reasonLabel})`);
+            console.log(`${progress} ${zip} — fetching from ${AI_PROVIDER}${RR_REFRESH_ENABLED && (!RR_REFRESH_HOT_ONLY || priority === 'hot') ? ' + RR' : ''}... (${priority}, ${reasonLabel})`);
 
             try {
-                const { data, groundingChunks } = await fetchFromGemini(zip);
+                const { data: aiData, groundingChunks } = await fetchFromAi(zip);
+                let masterData = aiData;
 
-                if (data && (data.agencies?.length > 0 || data.trunkedSystems?.length > 0)) {
-                    const ok = await saveToCache(cacheKey, data, groundingChunks);
+                if (RR_REFRESH_ENABLED && (!RR_REFRESH_HOT_ONLY || priority === 'hot')) {
+                    try {
+                        const rrData = await fetchFromRadioReference(zip);
+                        if (rrData && (rrData.agencies?.length > 0 || rrData.trunkedSystems?.length > 0)) {
+                            masterData = aiData ? mergeResults(rrData, aiData) : rrData;
+                            masterData.source = 'API';
+                            console.log('   └─ RadioReference refresh merged for this ZIP.');
+                        }
+                    } catch (rrError) {
+                        console.warn(`   └─ RR assist skipped: ${rrError.message}`);
+                    }
+                }
+
+                if (masterData && (masterData.agencies?.length > 0 || masterData.trunkedSystems?.length > 0)) {
+                    const ok = await saveToCache(cacheKey, masterData, groundingChunks);
                     if (ok) {
-                        const agencyCount = data.agencies?.length || 0;
-                        const trsCount = data.trunkedSystems?.length || 0;
-                        console.log(`   └─ ✅ Cached: ${data.locationName || zip} (${agencyCount} agencies, ${trsCount} trunked)`);
+                        const agencyCount = masterData.agencies?.length || 0;
+                        const trsCount = masterData.trunkedSystems?.length || 0;
+                        console.log(`   └─ ✅ Cached: ${masterData.locationName || zip} (${agencyCount} agencies, ${trsCount} trunked)`);
                         cached++;
                         priorityStats[priority].cached++;
                     } else {
