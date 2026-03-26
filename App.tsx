@@ -1430,6 +1430,9 @@ function App() {
                 onCancel={handleCancel}
                 onInputFocus={() => setShowSuggestions(true)}
                 onInputBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                interpretedLocationLabel={searchMeta?.interpretedLocationLabel}
+                interpretedScopeLabel={searchMeta?.interpretedScopeLabel}
+                refinementOptions={searchMeta?.refinementOptions}
               />
 
               {/* Recent Search History Suggestions */}

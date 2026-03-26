@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, MapPin, Loader2, Navigation, ChevronDown, Filter, X } from 'lucide-react';
+import type { SearchRefinementOption } from '../types';
 
 interface SearchFormProps {
     onSearch: (query: string) => void;
@@ -9,6 +10,9 @@ interface SearchFormProps {
     onCancel?: () => void;
     onInputFocus?: () => void;
     onInputBlur?: () => void;
+    interpretedLocationLabel?: string;
+    interpretedScopeLabel?: string;
+    refinementOptions?: SearchRefinementOption[];
 }
 
 const US_STATES = [
@@ -19,7 +23,7 @@ const US_STATES = [
     'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC'
 ];
 
-export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation, onCancel, onInputFocus, onInputBlur }: SearchFormProps) {
+export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation, onCancel, onInputFocus, onInputBlur, interpretedLocationLabel, interpretedScopeLabel, refinementOptions = [] }: SearchFormProps) {
     const [mode, setMode] = useState<'simple' | 'advanced'>('simple');
     const [simpleQuery, setSimpleQuery] = useState(initialQuery);
 
@@ -252,6 +256,33 @@ export function SearchForm({ onSearch, loading, initialQuery = '', onGeoLocation
 
                 </div>
             </form>
+
+            {(interpretedLocationLabel || interpretedScopeLabel || refinementOptions.length > 0) && (
+                <div className="mt-3 rounded-xl border border-cyan-500/20 bg-slate-900/70 px-4 py-3 shadow-lg shadow-cyan-900/10 animate-fade-in">
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono-tech uppercase tracking-wider text-cyan-300">
+                        <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-1">Interpreted Scope</span>
+                        {interpretedLocationLabel && <span className="text-slate-300 normal-case tracking-normal text-xs font-sans">{interpretedLocationLabel}</span>}
+                    </div>
+                    {interpretedScopeLabel && (
+                        <p className="mt-2 text-sm text-slate-300">{interpretedScopeLabel}</p>
+                    )}
+                    {refinementOptions.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {refinementOptions.map((option) => (
+                                <button
+                                    key={`${option.kind}:${option.query}`}
+                                    type="button"
+                                    onClick={() => onSearch(option.query)}
+                                    disabled={loading}
+                                    className="rounded-full border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-xs text-slate-200 transition-colors hover:border-cyan-500/50 hover:text-white disabled:opacity-60 font-mono-tech"
+                                >
+                                    {option.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

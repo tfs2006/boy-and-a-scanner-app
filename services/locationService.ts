@@ -55,7 +55,40 @@ function normalizeCountyName(value: string | null | undefined): string | null {
 
 function normalizeCityName(value: string | null | undefined): string | null {
     if (!value || typeof value !== 'string') return null;
-    return value.trim() || null;
+    const normalized = value
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((part, index) => {
+            if (/^saint$/i.test(part)) return 'St';
+            if (/^(st|ste)\.?$/i.test(part)) return index === 0 ? 'St' : part.replace(/\./g, '');
+            return part;
+        })
+        .join(' ');
+    return normalized || null;
+}
+
+function createCityAliasVariants(city: string | null, stateCode: string | null): string[] {
+    if (!city) return [];
+
+    const aliases = new Set<string>([city]);
+    const normalized = city.trim();
+
+    if (/^st\b/i.test(normalized)) {
+        aliases.add(normalized.replace(/^st\.?\b/i, 'Saint').trim());
+    }
+
+    if (/^saint\b/i.test(normalized)) {
+        aliases.add(normalized.replace(/^saint\b/i, 'St').trim());
+    }
+
+    if (stateCode) {
+        for (const alias of Array.from(aliases)) {
+            aliases.add(`${alias}, ${stateCode}`);
+        }
+    }
+
+    return Array.from(aliases);
 }
 
 function slugify(value: string): string {
@@ -81,6 +114,29 @@ function createCanonicalLocationCacheKey(county: string | null, city: string | n
         return `v7_loc_zip_${primaryZip}`;
     }
     return `v7_loc_query_${slugify(fallbackLabel)}`;
+}
+
+function createEquivalentLocationCacheKeys(county: string | null, city: string | null, stateCode: string | null, primaryZip: string | null, fallbackLabel: string): string[] {
+    const keys = new Set<string>();
+
+    if (county && stateCode) {
+        keys.add(`v7_loc_county_${slugify(county)}_${stateCode.toLowerCase()}`);
+    }
+
+    if (city && stateCode) {
+        keys.add(`v7_loc_city_${slugify(city)}_${stateCode.toLowerCase()}`);
+        for (const cityAlias of createCityAliasVariants(city, null)) {
+            keys.add(`v7_loc_city_${slugify(cityAlias)}_${stateCode.toLowerCase()}`);
+        }
+    }
+
+    if (primaryZip) {
+        keys.add(`v7_loc_zip_${primaryZip}`);
+    }
+
+    keys.add(`v7_loc_query_${slugify(fallbackLabel)}`);
+
+    return Array.from(keys);
 }
 
 function buildSearchLabel(city: string | null, county: string | null, stateCode: string | null, primaryZip: string | null, fallback: string): string {
@@ -154,6 +210,9 @@ function normalizeResolvedLocation(query: string, payload?: Partial<ResolvedLoca
     aliases.add(canonicalName);
     aliases.add(sanitizeForPrompt(query));
     if (city && stateCode) aliases.add(`${city}, ${stateCode}`);
+    for (const cityAlias of createCityAliasVariants(city, stateCode)) {
+        aliases.add(cityAlias);
+    }
     if (county && stateCode) aliases.add(`${county} County, ${stateCode}`);
     if (primaryZip) aliases.add(primaryZip);
 
@@ -177,6 +236,15 @@ function normalizeResolvedLocation(query: string, payload?: Partial<ResolvedLoca
 export function createLocationCacheKeys(query: string, resolvedLocation: ResolvedLocation): string[] {
     const keys = new Set<string>();
     keys.add(resolvedLocation.canonicalKey);
+    for (const key of createEquivalentLocationCacheKeys(
+        resolvedLocation.county,
+        resolvedLocation.city,
+        resolvedLocation.stateCode,
+        resolvedLocation.primaryZip,
+        resolvedLocation.canonicalName || resolvedLocation.standardizedName || query,
+    )) {
+        keys.add(key);
+    }
     keys.add(createLegacyLocationCacheKey(query));
     for (const alias of resolvedLocation.aliases) {
         keys.add(createLegacyLocationCacheKey(alias));

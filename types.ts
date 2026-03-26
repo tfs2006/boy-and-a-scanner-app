@@ -81,6 +81,12 @@ export interface GroundingChunk {
   };
 }
 
+export interface SearchRefinementOption {
+  label: string;
+  query: string;
+  kind: 'zip' | 'city' | 'county';
+}
+
 export interface SearchMeta {
   bypassedCache?: boolean;
   refreshedWithRadioReference?: boolean;
@@ -89,6 +95,9 @@ export interface SearchMeta {
   cacheUpdatedAt?: string;
   lastAuthoritativeRefreshAt?: string;
   autoBypassedStaleAuthoritativeCache?: boolean;
+  interpretedLocationLabel?: string;
+  interpretedScopeLabel?: string;
+  refinementOptions?: SearchRefinementOption[];
 }
 
 export interface SearchResponse {

@@ -88,7 +88,13 @@ describe('geminiService hybrid flows', () => {
         zips: ['84770'],
         aliases: ['St George, UT', 'Washington County, UT', '84770'],
       }),
-      createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_washington_ut', 'v6_loc_st.george,ut', 'v6_loc_84770']),
+      createLocationCacheKeys: vi.fn().mockReturnValue([
+        'v7_loc_county_washington_ut',
+        'v7_loc_city_st_george_ut',
+        'v7_loc_zip_84770',
+        'v6_loc_st.george,ut',
+        'v6_loc_84770',
+      ]),
     }));
 
     const fetchMock = vi.fn().mockResolvedValue({
@@ -159,7 +165,13 @@ describe('geminiService hybrid flows', () => {
         zips: ['84770'],
         aliases: ['St George, UT', 'Washington County, UT', '84770'],
       }),
-      createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_washington_ut', 'v6_loc_st.george,ut', 'v6_loc_84770']),
+      createLocationCacheKeys: vi.fn().mockReturnValue([
+        'v7_loc_county_washington_ut',
+        'v7_loc_city_st_george_ut',
+        'v7_loc_zip_84770',
+        'v6_loc_st.george,ut',
+        'v6_loc_84770',
+      ]),
     }));
 
     const fetchMock = vi.fn();
@@ -171,6 +183,8 @@ describe('geminiService hybrid flows', () => {
     expect(response.data?.source).toBe('Cache');
     expect(fetchMock).not.toHaveBeenCalled();
     expect(single).toHaveBeenCalledWith('v7_loc_county_washington_ut');
+    expect(single).toHaveBeenCalledWith('v7_loc_city_st_george_ut');
+    expect(single).toHaveBeenCalledWith('v7_loc_zip_84770');
     expect(single).toHaveBeenCalledWith('v6_loc_st.george,ut');
     expect(single).toHaveBeenCalledWith('v6_loc_84770');
   });
@@ -335,6 +349,60 @@ describe('geminiService hybrid flows', () => {
 
     const fetchFromRadioReference = (await import('../services/rrApi')).fetchFromRadioReference as unknown as ReturnType<typeof vi.fn>;
     expect(fetchFromRadioReference).toHaveBeenCalledWith('84770', { username: 'demo', password: 'secret' }, expect.any(Array), undefined);
+  });
+
+  it('writes refreshed results through to all equivalent cache keys', async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: { message: 'Not found' } });
+    const eq = vi.fn().mockReturnValue({ maybeSingle });
+    const select = vi.fn().mockReturnValue({ eq });
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn().mockReturnValue({ select, upsert });
+
+    vi.doMock('../services/supabaseClient', () => ({ supabase: { from } }));
+    vi.doMock('../services/rrApi', () => ({
+      fetchFromRadioReference: vi.fn().mockResolvedValue(structuredClone(rrResult)),
+    }));
+    vi.doMock('../services/locationService', () => ({
+      resolveLocationDetails: vi.fn().mockResolvedValue({
+        type: 'city',
+        standardizedName: 'St George, UT',
+        canonicalName: 'Washington County, UT',
+        canonicalKey: 'v7_loc_county_washington_ut',
+        searchLabel: 'St George, UT | Washington County, UT | ZIP 84770',
+        isZip: false,
+        primaryZip: '84770',
+        city: 'St George',
+        county: 'Washington',
+        stateCode: 'UT',
+        zips: ['84770'],
+        aliases: ['St George, UT', 'Washington County, UT', '84770'],
+      }),
+      createLocationCacheKeys: vi.fn().mockReturnValue([
+        'v7_loc_county_washington_ut',
+        'v7_loc_city_st_george_ut',
+        'v7_loc_zip_84770',
+        'v6_loc_st.george,ut',
+        'v6_loc_84770',
+      ]),
+    }));
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: structuredClone(aiResult),
+        groundingChunks: [{ web: { uri: 'https://example.com/live-ai', title: 'Live AI' } }],
+        rawText: 'AI Results',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { searchFrequencies } = await import('../services/geminiService');
+    await searchFrequencies('St. George, UT', ['Police'], { username: 'demo', password: 'secret' });
+
+    expect(upsert).toHaveBeenCalledTimes(5);
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ search_key: 'v7_loc_county_washington_ut' }), { onConflict: 'search_key' });
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ search_key: 'v7_loc_city_st_george_ut' }), { onConflict: 'search_key' });
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ search_key: 'v7_loc_zip_84770' }), { onConflict: 'search_key' });
   });
 
   it('automatically refreshes authoritative RR cache when it is older than the configured threshold', async () => {

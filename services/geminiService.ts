@@ -1,9 +1,9 @@
 
-import { SearchMeta, SearchResponse, ScanResult, TripResult, ServiceType } from "../types";
+import { SearchMeta, SearchRefinementOption, SearchResponse, ScanResult, TripResult, ServiceType } from "../types";
 import { sanitizeForPrompt } from "../utils/security";
 import { supabase } from "./supabaseClient";
 import { fetchFromRadioReference, RRCredentials } from "./rrApi";
-import { createLocationCacheKeys, resolveLocationDetails } from "./locationService";
+import { createLocationCacheKeys, resolveLocationDetails, type ResolvedLocation } from "./locationService";
 
 const debugLog = (...args: unknown[]) => {
   if (import.meta.env.DEV) {
@@ -15,6 +15,52 @@ type SearchRequestOptions = {
   bypassCache?: boolean;
   maxAuthoritativeCacheAgeMs?: number;
 };
+
+function buildRefinementOptions(resolvedLocation: ResolvedLocation): SearchRefinementOption[] {
+  const options: SearchRefinementOption[] = [];
+  const seen = new Set<string>();
+
+  const addOption = (label: string, query: string, kind: SearchRefinementOption['kind']) => {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery || seen.has(normalizedQuery.toLowerCase())) return;
+    seen.add(normalizedQuery.toLowerCase());
+    options.push({ label, query: normalizedQuery, kind });
+  };
+
+  if (resolvedLocation.primaryZip) {
+    addOption(`Use ZIP ${resolvedLocation.primaryZip}`, resolvedLocation.primaryZip, 'zip');
+  }
+
+  if (resolvedLocation.city && resolvedLocation.stateCode) {
+    addOption(`Use ${resolvedLocation.city}, ${resolvedLocation.stateCode}`, `${resolvedLocation.city}, ${resolvedLocation.stateCode}`, 'city');
+  }
+
+  if (resolvedLocation.county && resolvedLocation.stateCode) {
+    addOption(`Use ${resolvedLocation.county} County, ${resolvedLocation.stateCode}`, `${resolvedLocation.county} County, ${resolvedLocation.stateCode}`, 'county');
+  }
+
+  return options;
+}
+
+function buildInterpretedScopeLabel(resolvedLocation: ResolvedLocation): string {
+  if (resolvedLocation.city && resolvedLocation.county && resolvedLocation.stateCode && resolvedLocation.primaryZip) {
+    return `Resolved to ${resolvedLocation.city}, ${resolvedLocation.stateCode} with countywide coverage via ZIP ${resolvedLocation.primaryZip}.`;
+  }
+
+  if (resolvedLocation.county && resolvedLocation.stateCode && resolvedLocation.primaryZip) {
+    return `Resolved to ${resolvedLocation.county} County, ${resolvedLocation.stateCode} using ZIP ${resolvedLocation.primaryZip}.`;
+  }
+
+  if (resolvedLocation.city && resolvedLocation.stateCode) {
+    return `Resolved to ${resolvedLocation.city}, ${resolvedLocation.stateCode}.`;
+  }
+
+  if (resolvedLocation.primaryZip) {
+    return `Resolved to ZIP ${resolvedLocation.primaryZip}.`;
+  }
+
+  return `Using ${resolvedLocation.standardizedName}.`;
+}
 
 // --- Caching Helpers ---
 
@@ -198,6 +244,9 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   const searchMeta: SearchMeta = { bypassedCache: Boolean(options.bypassCache) };
 
   const resolvedLocation = await resolveLocationDetails(safeLocation, signal);
+  searchMeta.interpretedLocationLabel = resolvedLocation.searchLabel;
+  searchMeta.interpretedScopeLabel = buildInterpretedScopeLabel(resolvedLocation);
+  searchMeta.refinementOptions = buildRefinementOptions(resolvedLocation);
   const cacheKeys = createLocationCacheKeys(safeLocation, resolvedLocation);
   const cacheKey = resolvedLocation.canonicalKey;
   const rrLookupZip = /^\d{5}$/.test(safeLocation) ? safeLocation : resolvedLocation.primaryZip;
@@ -369,8 +418,8 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
     }
     // Annotate talkgroup types before caching so cache also has them
     annotateTalkgroups(masterData);
-    debugLog(`[Cache Save] Storing Master Record for ${cacheKey}`);
-    await saveToCache(cacheKey, masterData, masterGrounding);
+    debugLog(`[Cache Save] Storing Master Record for ${cacheKeys.length} equivalent keys (primary ${cacheKey})`);
+    await Promise.all(cacheKeys.map((key) => saveToCache(key, masterData, masterGrounding)));
   }
 
   // 4. Return FILTERED data to user

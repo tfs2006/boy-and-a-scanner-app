@@ -66,10 +66,13 @@ async function renderAppForExportTest(options?: { csvFailureMessage?: string; cl
   }));
 
   vi.doMock('../components/SearchForm', () => ({
-    SearchForm: ({ onSearch }: { onSearch: (query: string) => void }) => (
-      <button type="button" onClick={() => onSearch('12345')}>
-        trigger search
-      </button>
+    SearchForm: ({ onSearch, interpretedScopeLabel }: { onSearch: (query: string) => void; interpretedScopeLabel?: string }) => (
+      <div>
+        <button type="button" onClick={() => onSearch('12345')}>
+          trigger search
+        </button>
+        {interpretedScopeLabel ? <div>{interpretedScopeLabel}</div> : null}
+      </div>
     ),
   }));
 
@@ -164,5 +167,24 @@ describe('app export status notices', () => {
 
     expect(screen.queryByText('coordString is not defined')).not.toBeInTheDocument();
     expect(screen.getByTitle('Copy Conventional Frequencies for Uniden Sentinel (Paste)')).toBeInTheDocument();
+  });
+
+  it('surfaces interpreted scope guidance returned from search metadata', async () => {
+    const { searchFrequencies } = await renderAppForExportTest();
+
+    searchFrequencies.mockResolvedValueOnce({
+      data: searchResult,
+      groundingChunks: null,
+      searchMeta: {
+        interpretedLocationLabel: 'St George, UT | Washington County, UT | ZIP 84770',
+        interpretedScopeLabel: 'Resolved to St George, UT with countywide coverage via ZIP 84770.',
+      },
+    });
+
+    fireEvent.click(screen.getByText('trigger search'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Resolved to St George, UT with countywide coverage via ZIP 84770.')).toBeInTheDocument();
+    });
   });
 });
