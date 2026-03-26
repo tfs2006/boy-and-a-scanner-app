@@ -137,7 +137,8 @@ describe('geminiService hybrid flows', () => {
     }));
     const eq = vi.fn((_: string, key: string) => ({ single: () => single(key) }));
     const select = vi.fn().mockReturnValue({ eq });
-    const from = vi.fn().mockReturnValue({ select });
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn().mockReturnValue({ select, upsert });
 
     vi.doMock('../services/supabaseClient', () => ({ supabase: { from } }));
     vi.doMock('../services/rrApi', () => ({
@@ -172,6 +173,225 @@ describe('geminiService hybrid flows', () => {
     expect(single).toHaveBeenCalledWith('v7_loc_county_washington_ut');
     expect(single).toHaveBeenCalledWith('v6_loc_st.george,ut');
     expect(single).toHaveBeenCalledWith('v6_loc_84770');
+  });
+
+  it('uses cached AI data as a supplement while fetching fresh RadioReference data', async () => {
+    const single = vi.fn((key: string) => Promise.resolve({
+      data: key === 'v7_loc_county_washington_ut'
+        ? {
+            result_data: structuredClone(aiResult),
+            grounding_chunks: [{ web: { uri: 'https://example.com/cache', title: 'Cache' } }],
+          }
+        : null,
+      error: key === 'v7_loc_county_washington_ut' ? null : { message: 'Not found' },
+    }));
+    const eq = vi.fn((_: string, key: string) => ({ single: () => single(key) }));
+    const select = vi.fn().mockReturnValue({ eq });
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn().mockReturnValue({ select, upsert });
+
+    vi.doMock('../services/supabaseClient', () => ({ supabase: { from } }));
+    vi.doMock('../services/rrApi', () => ({
+      fetchFromRadioReference: vi.fn().mockResolvedValue(structuredClone(rrResult)),
+    }));
+    vi.doMock('../services/locationService', () => ({
+      resolveLocationDetails: vi.fn().mockResolvedValue({
+        type: 'city',
+        standardizedName: 'St George, UT',
+        canonicalName: 'Washington County, UT',
+        canonicalKey: 'v7_loc_county_washington_ut',
+        searchLabel: 'St George, UT | Washington County, UT | ZIP 84770',
+        isZip: false,
+        primaryZip: '84770',
+        city: 'St George',
+        county: 'Washington',
+        stateCode: 'UT',
+        zips: ['84770'],
+        aliases: ['St George, UT', 'Washington County, UT', '84770'],
+      }),
+      createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_washington_ut', 'v6_loc_st.george,ut', 'v6_loc_84770']),
+    }));
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { searchFrequencies } = await import('../services/geminiService');
+    const response = await searchFrequencies('St. George, UT', ['Police'], { username: 'demo', password: 'secret' });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.data?.source).toBe('API');
+    expect(response.searchMeta?.refreshedWithRadioReference).toBe(true);
+    expect(response.searchMeta?.usedCachedAiSupplement).toBe(true);
+    expect(response.data?.agencies.map((agency) => agency.name)).toEqual(['County Sheriff']);
+    expect(response.data?.trunkedSystems.map((system) => system.name)).toEqual(['County P25', 'Metro DMR']);
+    expect(response.rawText).toBe('Merged Hybrid Results (RR + cached AI)');
+
+    const fetchFromRadioReference = (await import('../services/rrApi')).fetchFromRadioReference as unknown as ReturnType<typeof vi.fn>;
+    expect(fetchFromRadioReference).toHaveBeenCalledWith('84770', { username: 'demo', password: 'secret' }, expect.any(Array), undefined);
+  });
+
+  it('reuses authoritative RR cache immediately even when RR credentials are present', async () => {
+    const cachedRrResult = structuredClone(rrResult);
+    const single = vi.fn((key: string) => Promise.resolve({
+      data: key === 'v7_loc_county_washington_ut'
+        ? {
+            result_data: cachedRrResult,
+            grounding_chunks: [{ web: { uri: 'https://example.com/rr-cache', title: 'RR Cache' } }],
+          }
+        : null,
+      error: key === 'v7_loc_county_washington_ut' ? null : { message: 'Not found' },
+    }));
+    const eq = vi.fn((_: string, key: string) => ({ single: () => single(key) }));
+    const select = vi.fn().mockReturnValue({ eq });
+    const from = vi.fn().mockReturnValue({ select });
+
+    vi.doMock('../services/supabaseClient', () => ({ supabase: { from } }));
+    vi.doMock('../services/rrApi', () => ({
+      fetchFromRadioReference: vi.fn(),
+    }));
+    vi.doMock('../services/locationService', () => ({
+      resolveLocationDetails: vi.fn().mockResolvedValue({
+        type: 'city',
+        standardizedName: 'St George, UT',
+        canonicalName: 'Washington County, UT',
+        canonicalKey: 'v7_loc_county_washington_ut',
+        searchLabel: 'St George, UT | Washington County, UT | ZIP 84770',
+        isZip: false,
+        primaryZip: '84770',
+        city: 'St George',
+        county: 'Washington',
+        stateCode: 'UT',
+        zips: ['84770'],
+        aliases: ['St George, UT', 'Washington County, UT', '84770'],
+      }),
+      createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_washington_ut', 'v6_loc_st.george,ut', 'v6_loc_84770']),
+    }));
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { searchFrequencies } = await import('../services/geminiService');
+    const response = await searchFrequencies('St. George, UT', ['Police'], { username: 'demo', password: 'secret' });
+
+    expect(response.data?.source).toBe('API');
+    expect(response.searchMeta?.usedAuthoritativeCache).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const fetchFromRadioReference = (await import('../services/rrApi')).fetchFromRadioReference as unknown as ReturnType<typeof vi.fn>;
+    expect(fetchFromRadioReference).not.toHaveBeenCalled();
+  });
+
+  it('bypasses cache reads during a manual authoritative refresh', async () => {
+    const single = vi.fn().mockResolvedValue({
+      data: {
+        result_data: structuredClone(rrResult),
+        grounding_chunks: [{ web: { uri: 'https://example.com/rr-cache', title: 'RR Cache' } }],
+      },
+      error: null,
+    });
+    const eq = vi.fn().mockReturnValue({ single });
+    const select = vi.fn().mockReturnValue({ eq });
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn().mockReturnValue({ select, upsert });
+
+    vi.doMock('../services/supabaseClient', () => ({ supabase: { from } }));
+    vi.doMock('../services/rrApi', () => ({
+      fetchFromRadioReference: vi.fn().mockResolvedValue(structuredClone(rrResult)),
+    }));
+    vi.doMock('../services/locationService', () => ({
+      resolveLocationDetails: vi.fn().mockResolvedValue({
+        type: 'city',
+        standardizedName: 'St George, UT',
+        canonicalName: 'Washington County, UT',
+        canonicalKey: 'v7_loc_county_washington_ut',
+        searchLabel: 'St George, UT | Washington County, UT | ZIP 84770',
+        isZip: false,
+        primaryZip: '84770',
+        city: 'St George',
+        county: 'Washington',
+        stateCode: 'UT',
+        zips: ['84770'],
+        aliases: ['St George, UT', 'Washington County, UT', '84770'],
+      }),
+      createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_washington_ut', 'v6_loc_st.george,ut', 'v6_loc_84770']),
+    }));
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: structuredClone(aiResult),
+        groundingChunks: [{ web: { uri: 'https://example.com/live-ai', title: 'Live AI' } }],
+        rawText: 'AI Results',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { searchFrequencies } = await import('../services/geminiService');
+    const response = await searchFrequencies('St. George, UT', ['Police'], { username: 'demo', password: 'secret' }, undefined, { bypassCache: true });
+
+    expect(single).not.toHaveBeenCalled();
+    expect(response.data?.source).toBe('API');
+    expect(response.searchMeta?.bypassedCache).toBe(true);
+
+    const fetchFromRadioReference = (await import('../services/rrApi')).fetchFromRadioReference as unknown as ReturnType<typeof vi.fn>;
+    expect(fetchFromRadioReference).toHaveBeenCalledWith('84770', { username: 'demo', password: 'secret' }, expect.any(Array), undefined);
+  });
+
+  it('automatically refreshes authoritative RR cache when it is older than the configured threshold', async () => {
+    const single = vi.fn().mockResolvedValue({
+      data: {
+        result_data: structuredClone(rrResult),
+        grounding_chunks: [{ web: { uri: 'https://example.com/rr-cache', title: 'RR Cache' } }],
+        updated_at: '2024-01-01T00:00:00.000Z',
+      },
+      error: null,
+    });
+    const eq = vi.fn().mockReturnValue({ single });
+    const select = vi.fn().mockReturnValue({ eq });
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn().mockReturnValue({ select, upsert });
+
+    vi.doMock('../services/supabaseClient', () => ({ supabase: { from } }));
+    vi.doMock('../services/rrApi', () => ({
+      fetchFromRadioReference: vi.fn().mockResolvedValue(structuredClone(rrResult)),
+    }));
+    vi.doMock('../services/locationService', () => ({
+      resolveLocationDetails: vi.fn().mockResolvedValue({
+        type: 'city',
+        standardizedName: 'St George, UT',
+        canonicalName: 'Washington County, UT',
+        canonicalKey: 'v7_loc_county_washington_ut',
+        searchLabel: 'St George, UT | Washington County, UT | ZIP 84770',
+        isZip: false,
+        primaryZip: '84770',
+        city: 'St George',
+        county: 'Washington',
+        stateCode: 'UT',
+        zips: ['84770'],
+        aliases: ['St George, UT', 'Washington County, UT', '84770'],
+      }),
+      createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_washington_ut', 'v6_loc_st.george,ut', 'v6_loc_84770']),
+    }));
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: structuredClone(aiResult),
+        groundingChunks: [{ web: { uri: 'https://example.com/live-ai', title: 'Live AI' } }],
+        rawText: 'AI Results',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { searchFrequencies } = await import('../services/geminiService');
+    const response = await searchFrequencies('St. George, UT', ['Police'], { username: 'demo', password: 'secret' }, undefined, { maxAuthoritativeCacheAgeMs: 60_000 });
+
+    expect(response.data?.source).toBe('API');
+    expect(response.searchMeta?.autoBypassedStaleAuthoritativeCache).toBe(true);
+    expect(response.searchMeta?.lastAuthoritativeRefreshAt).toBeTruthy();
+
+    const fetchFromRadioReference = (await import('../services/rrApi')).fetchFromRadioReference as unknown as ReturnType<typeof vi.fn>;
+    expect(fetchFromRadioReference).toHaveBeenCalledWith('84770', { username: 'demo', password: 'secret' }, expect.any(Array), undefined);
   });
 
   it('filters trip results without mutating the original trip payload', async () => {

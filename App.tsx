@@ -1,9 +1,9 @@
 
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu, Users } from 'lucide-react';
+import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu, Users, RotateCw } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
-import { SearchResponse, ScanResult, ServiceType } from './types';
+import { SearchMeta, SearchResponse, ScanResult, ServiceType } from './types';
 import { FrequencyDisplay } from './components/FrequencyDisplay';
 import { Auth } from './components/Auth';
 import { isValidLocationInput } from './utils/security';
@@ -67,6 +67,27 @@ type StatusNotice = {
   detail?: string;
 };
 
+const RR_AUTO_REFRESH_ENABLED_KEY = 'rr_auto_refresh_enabled';
+const RR_AUTO_REFRESH_MINUTES_KEY = 'rr_auto_refresh_minutes';
+const RR_AUTO_REFRESH_MINUTE_OPTIONS = [15, 30, 60, 180];
+
+function formatRelativeTimestamp(value: string): string {
+  const target = Date.parse(value);
+  if (!Number.isFinite(target)) return 'time unknown';
+
+  const deltaMs = Date.now() - target;
+  const absMinutes = Math.round(Math.abs(deltaMs) / 60000);
+
+  if (absMinutes < 1) return 'just now';
+  if (absMinutes < 60) return `${absMinutes}m ago`;
+
+  const absHours = Math.round(absMinutes / 60);
+  if (absHours < 24) return `${absHours}h ago`;
+
+  const absDays = Math.round(absHours / 24);
+  return `${absDays}d ago`;
+}
+
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -83,6 +104,7 @@ function App() {
   const [searchStep, setSearchStep] = useState<string>('');
   const [result, setResult] = useState<ScanResult | null>(null);
   const [grounding, setGrounding] = useState<SearchResponse['groundingChunks']>(null);
+  const [searchMeta, setSearchMeta] = useState<SearchMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rrWarning, setRrWarning] = useState<string | null>(null);
   const [statusNotice, setStatusNotice] = useState<StatusNotice | null>(null);
@@ -215,6 +237,11 @@ function App() {
   const [rrUsername, setRrUsername] = useState(() => sessionStorage.getItem('rr_username') || localStorage.getItem('rr_username') || '');
   const [rrPassword, setRrPassword] = useState(() => sessionStorage.getItem('rr_password') || localStorage.getItem('rr_password') || '');
   const [showRRPassword, setShowRRPassword] = useState(false);
+  const [rrAutoRefreshEnabled, setRrAutoRefreshEnabled] = useState(() => localStorage.getItem(RR_AUTO_REFRESH_ENABLED_KEY) !== '0');
+  const [rrAutoRefreshMinutes, setRrAutoRefreshMinutes] = useState(() => {
+    const stored = Number.parseInt(localStorage.getItem(RR_AUTO_REFRESH_MINUTES_KEY) || '60', 10);
+    return RR_AUTO_REFRESH_MINUTE_OPTIONS.includes(stored) ? stored : 60;
+  });
   const rrCredentials: RRCredentials | undefined = (rrUsername && rrPassword) ? { username: rrUsername, password: rrPassword } : undefined;
 
   useEffect(() => {
@@ -229,6 +256,26 @@ function App() {
       localStorage.removeItem('rr_password');
     }
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(RR_AUTO_REFRESH_ENABLED_KEY, rrAutoRefreshEnabled ? '1' : '0');
+  }, [rrAutoRefreshEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem(RR_AUTO_REFRESH_MINUTES_KEY, String(rrAutoRefreshMinutes));
+  }, [rrAutoRefreshMinutes]);
+
+  const buildSearchOptions = (options?: { bypassCache?: boolean }) => {
+    if (options?.bypassCache) {
+      return { bypassCache: true };
+    }
+
+    if (rrCredentials && rrAutoRefreshEnabled) {
+      return { maxAuthoritativeCacheAgeMs: rrAutoRefreshMinutes * 60_000 };
+    }
+
+    return undefined;
+  };
 
   const saveRRCredentials = () => {
     sessionStorage.setItem('rr_username', rrUsername);
@@ -384,17 +431,19 @@ function App() {
     setSearchStep('');
   };
 
-  const runSearch = (query: string) => {
+  const runSearch = (query: string, options?: { bypassCache?: boolean }) => {
     const { controller, requestId } = beginSearchRequest();
+    const searchOptions = buildSearchOptions(options);
     setLoading(true);
     setError(null);
     setResult(null);
     setGrounding(null);
+    setSearchMeta(null);
     setSearchTime(0);
     setSearchStep('Initializing Scanner Protocol...');
     const startTime = performance.now();
 
-    performAiSearch(query, controller.signal, requestId).catch(err => {
+    performAiSearch(query, controller.signal, requestId, searchOptions).catch(err => {
       if (err?.name === 'AbortError' || !isActiveSearch(requestId, controller.signal)) return;
       setError("Search failed. " + (err.message || 'Please try again.'));
     }).finally(() => {
@@ -444,6 +493,7 @@ function App() {
     setPinnedResult(null);
     setSearchQuery('');
     setGrounding(null);
+    setSearchMeta(null);
     setError(null);
     setRrWarning(null);
     setLoading(false);
@@ -499,6 +549,7 @@ function App() {
     setError(null);
     setResult(null);
     setGrounding(null);
+    setSearchMeta(null);
     setSearchTime(0);
     setSearchStep('Acquiring GPS Satellite Lock...');
 
@@ -647,17 +698,19 @@ function App() {
   // handleSearch removed - logic moved to SearchForm onSearch prop
 
 
-  const performAiSearch = async (query: string, signal?: AbortSignal, requestId?: number) => {
+  const performAiSearch = async (query: string, signal?: AbortSignal, requestId?: number, options?: { bypassCache?: boolean; maxAuthoritativeCacheAgeMs?: number }) => {
     setError(null);
     setRrWarning(null);
     const isZip = /^\d{5}$/.test(query.trim());
-    if (isZip && rrCredentials) {
+    if (options?.bypassCache && rrCredentials) {
+      setSearchStep('Bypassing cache and rechecking RadioReference...');
+    } else if (isZip && rrCredentials) {
       setSearchStep('Connecting to RadioReference Database...');
     } else {
       setSearchStep(`Analyzing Location & Scanning for: ${serviceTypes.slice(0, 3).join(', ')}...`);
     }
     try {
-      const response = await searchFrequencies(query, serviceTypes, rrCredentials, signal);
+      const response = await searchFrequencies(query, serviceTypes, rrCredentials, signal, options);
       if ((requestId !== undefined && !isActiveSearch(requestId, signal)) || signal?.aborted) {
         return;
       }
@@ -677,9 +730,32 @@ function App() {
       if (response.data) {
         setResult(response.data);
         setGrounding(response.groundingChunks);
+        setSearchMeta(response.searchMeta ?? null);
+        if (response.searchMeta?.autoBypassedStaleAuthoritativeCache) {
+          pushStatusNotice({
+            tone: 'info',
+            message: 'Older RadioReference cache was refreshed automatically.',
+            detail: `Because the last authoritative lookup was older than ${rrAutoRefreshMinutes} minute${rrAutoRefreshMinutes === 1 ? '' : 's'}, the app ran a fresh RR check.`,
+          });
+        } else if (options?.bypassCache && rrCredentials) {
+          pushStatusNotice({
+            tone: response.data.source === 'API' ? 'success' : 'info',
+            message: response.data.source === 'API' ? 'Live RadioReference recheck complete.' : 'Live recheck complete.',
+            detail: response.data.source === 'API'
+              ? 'Cache was bypassed for this search so you are seeing a fresh RadioReference lookup.'
+              : 'Cache was bypassed for this search. RadioReference did not return authoritative data, so the best live result was shown.',
+          });
+        } else if (response.searchMeta?.refreshedWithRadioReference) {
+          pushStatusNotice({
+            tone: 'success',
+            message: 'Cached AI results were upgraded with live RadioReference data.',
+            detail: 'This result was refreshed against the RadioReference database before being shown.',
+          });
+        }
         saveSearchToHistory(query);
+          const searchOptions = buildSearchOptions();
         setTimeout(updateStats, 1000);
-      } else {
+            await performAiSearch(coordString, controller.signal, requestId, searchOptions);
         // Enhance error for ambiguous locations
         if (!isZip && !query.includes(',')) {
           setError(`Could not pinpoint "${query}". Try adding a State (e.g., "${query}, CA") or ZIP code.`);
@@ -703,10 +779,10 @@ function App() {
   };
 
   // Helper to determine Source Badge style and text
-  const getSourceBadge = (source: 'API' | 'AI' | 'Cache') => {
+  const getSourceBadge = (source: 'API' | 'AI' | 'Cache', meta?: SearchMeta | null) => {
     if (source === 'Cache') {
       return (
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-purple-900/30 border-purple-500/50 text-purple-400 animate-pulse-subtle">
             <Zap className="w-4 h-4 fill-purple-400" />
             <span className="text-xs font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Source: </span>Cloud Cache</span>
@@ -722,11 +798,32 @@ function App() {
     }
     if (source === 'API') {
       return (
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-green-900/30 border-green-500/50 text-green-400">
             <Database className="w-4 h-4" />
             <span className="text-xs font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Source: </span>RadioReference DB</span>
           </div>
+          {meta?.refreshedWithRadioReference && (
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-cyan-900/30 border-cyan-500/50 text-cyan-300">
+              <ShieldCheck className="w-4 h-4" />
+              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Refreshed with RadioReference</span>
+            </div>
+          )}
+          {meta?.bypassedCache && (
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-slate-900/50 border-slate-500/50 text-slate-300">
+              <RotateCw className="w-4 h-4" />
+              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Live Recheck</span>
+            </div>
+          )}
+          {meta?.lastAuthoritativeRefreshAt && (
+            <div
+              className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-slate-900/40 border-slate-600/50 text-slate-300"
+              title={new Date(meta.lastAuthoritativeRefreshAt).toLocaleString()}
+            >
+              <Timer className="w-4 h-4" />
+              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">RR Refreshed {formatRelativeTimestamp(meta.lastAuthoritativeRefreshAt)}</span>
+            </div>
+          )}
           {searchTime > 0 && (
             <div className="text-xs font-mono-tech text-emerald-400 flex items-center gap-1">
               <Timer className="w-3 h-3" />
@@ -737,7 +834,7 @@ function App() {
       );
     }
     return (
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-amber-900/30 border-amber-500/50 text-amber-400">
           <Bot className="w-4 h-4" />
           <span className="text-xs font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Source: </span>AI Search</span>
@@ -1156,6 +1253,38 @@ function App() {
                   </button>
                 </div>
               </div>
+
+              <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-mono-tech uppercase tracking-wider text-cyan-300">Cache Freshness</div>
+                    <p className="mt-1 text-xs text-slate-400 leading-relaxed">
+                      Automatically recheck RadioReference when cached RR-backed results are older than the selected threshold.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRrAutoRefreshEnabled((current) => !current)}
+                    className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-mono-tech font-bold uppercase tracking-wider transition-colors ${rrAutoRefreshEnabled ? 'border-cyan-500/50 bg-cyan-900/30 text-cyan-300' : 'border-slate-700 bg-slate-900 text-slate-500'}`}
+                  >
+                    {rrAutoRefreshEnabled ? 'Auto Refresh On' : 'Auto Refresh Off'}
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-slate-500 font-mono-tech mb-1 uppercase tracking-wider">Refresh RR cache older than</label>
+                  <select
+                    value={rrAutoRefreshMinutes}
+                    onChange={(event) => setRrAutoRefreshMinutes(Number.parseInt(event.target.value, 10))}
+                    disabled={!rrAutoRefreshEnabled}
+                    className="w-full bg-[#1e293b] border border-slate-700 rounded px-3 py-2 text-white font-mono-tech text-sm focus:border-cyan-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {RR_AUTO_REFRESH_MINUTE_OPTIONS.map((minutes) => (
+                      <option key={minutes} value={minutes}>{minutes} minutes</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div className="mt-4 p-3 bg-slate-950 rounded border border-slate-800">
@@ -1513,7 +1642,22 @@ function App() {
 
                     <div className="w-px h-8 bg-slate-700 mx-2 hidden sm:block"></div>
 
-                    {getSourceBadge(result.source)}
+                    {getSourceBadge(result.source, searchMeta)}
+
+                    {rrCredentials && searchQuery.trim() && (
+                      <>
+                        <div className="w-px h-8 bg-slate-700 mx-2 hidden sm:block"></div>
+                        <button
+                          onClick={() => runSearch(searchQuery, { bypassCache: true })}
+                          disabled={loading}
+                          className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-slate-900/60 border-cyan-500/50 text-cyan-300 hover:bg-cyan-900/40 hover:text-white transition-all shadow-lg shadow-cyan-900/20 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
+                          title="Bypass cache and run a fresh RadioReference recheck"
+                        >
+                          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <RotateCw className="w-5 h-5" />}
+                          <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Refresh RR</span>
+                        </button>
+                      </>
+                    )}
 
                     <div className="flex flex-wrap items-center justify-center gap-2">
                       <button

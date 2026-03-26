@@ -35,8 +35,10 @@ async function renderAppForExportTest(options?: { csvFailureMessage?: string; cl
     },
   }));
 
+  const searchFrequencies = vi.fn().mockResolvedValue({ data: searchResult, groundingChunks: null });
+
   vi.doMock('../services/geminiService', () => ({
-    searchFrequencies: vi.fn().mockResolvedValue({ data: searchResult, groundingChunks: null }),
+    searchFrequencies,
     getDatabaseStats: vi.fn().mockResolvedValue(0),
   }));
 
@@ -99,6 +101,8 @@ async function renderAppForExportTest(options?: { csvFailureMessage?: string; cl
 
   fireEvent.click(await screen.findByText('trigger search'));
   await screen.findByTitle('Copy Conventional Frequencies for Uniden Sentinel (Paste)');
+
+  return { searchFrequencies };
 }
 
 describe('app export status notices', () => {
@@ -127,6 +131,31 @@ describe('app export status notices', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Failed to start the CSV download. Please try again.')).toBeInTheDocument();
+    });
+  });
+
+  it('shows the RR refresh badge and uses bypass-cache on manual recheck', async () => {
+    sessionStorage.setItem('rr_username', 'demo');
+    sessionStorage.setItem('rr_password', 'secret');
+
+    const { searchFrequencies } = await renderAppForExportTest();
+
+    searchFrequencies.mockResolvedValueOnce({
+      data: searchResult,
+      groundingChunks: null,
+      searchMeta: { refreshedWithRadioReference: true },
+    });
+
+    fireEvent.click(screen.getByText('trigger search'));
+
+    await waitFor(() => {
+      expect(screen.getByText('Refreshed with RadioReference')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('Refresh RR'));
+
+    await waitFor(() => {
+      expect(searchFrequencies).toHaveBeenLastCalledWith('12345', ['Police', 'Fire', 'EMS'], { username: 'demo', password: 'secret' }, expect.any(AbortSignal), { bypassCache: true });
     });
   });
 });

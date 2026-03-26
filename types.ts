@@ -81,11 +81,22 @@ export interface GroundingChunk {
   };
 }
 
+export interface SearchMeta {
+  bypassedCache?: boolean;
+  refreshedWithRadioReference?: boolean;
+  usedCachedAiSupplement?: boolean;
+  usedAuthoritativeCache?: boolean;
+  cacheUpdatedAt?: string;
+  lastAuthoritativeRefreshAt?: string;
+  autoBypassedStaleAuthoritativeCache?: boolean;
+}
+
 export interface SearchResponse {
   data: ScanResult | null;
   groundingChunks: GroundingChunk[] | null;
   rawText?: string;
   rrError?: string;  // Set when RadioReference fetch fails, even if AI data was returned
+  searchMeta?: SearchMeta;
 }
 
 export type ServiceType =

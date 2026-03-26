@@ -1,5 +1,5 @@
 
-import { SearchResponse, ScanResult, TripResult, ServiceType } from "../types";
+import { SearchMeta, SearchResponse, ScanResult, TripResult, ServiceType } from "../types";
 import { sanitizeForPrompt } from "../utils/security";
 import { supabase } from "./supabaseClient";
 import { fetchFromRadioReference, RRCredentials } from "./rrApi";
@@ -11,27 +11,50 @@ const debugLog = (...args: unknown[]) => {
   }
 };
 
+type SearchRequestOptions = {
+  bypassCache?: boolean;
+  maxAuthoritativeCacheAgeMs?: number;
+};
+
 // --- Caching Helpers ---
 
-async function getFromCache(key: string, rrCredentials?: RRCredentials): Promise<any | null> {
+function hasRadioReferenceOrigins(items: Array<{ origin?: 'RR' | 'AI' }> | undefined): boolean {
+  return Array.isArray(items) && items.some((item) => item?.origin === 'RR');
+}
+
+function isAuthoritativeCacheRecord(result: any): boolean {
+  if (!result || typeof result !== 'object') return false;
+
+  if (result.source === 'API') return true;
+
+  if (typeof result.crossRef?.notes === 'string' && /radioreference/i.test(result.crossRef.notes)) {
+    return true;
+  }
+
+  if (hasRadioReferenceOrigins(result.agencies) || hasRadioReferenceOrigins(result.trunkedSystems)) {
+    return true;
+  }
+
+  if (Array.isArray(result.locations)) {
+    return result.locations.some((loc: any) => isAuthoritativeCacheRecord(loc?.data));
+  }
+
+  return false;
+}
+
+async function getFromCache(key: string): Promise<any | null> {
   if (!supabase) return null;
   try {
     const { data, error } = await supabase
       .from('search_cache')
-      .select('result_data, grounding_chunks')
+      .select('result_data, grounding_chunks, updated_at')
       .eq('search_key', key)
       .single();
 
     if (error || !data) return null;
 
     const result = data.result_data ? JSON.parse(JSON.stringify(data.result_data)) : null;
-
-    // --- QUALITY CHECK (King of the Hill) ---
-    // If cache is AI-sourced (Silver) but user has RR Creds (Gold), ignore cache to fetch fresh Gold data.
-    if (result && result.source === 'AI' && rrCredentials) {
-      debugLog("Cache ignored: Overwriting AI data with potential RadioReference data.");
-      return null;
-    }
+    const isAuthoritative = isAuthoritativeCacheRecord(result);
 
     // --- STALE CACHE DETECTION ---
     let isStale = false;
@@ -53,7 +76,7 @@ async function getFromCache(key: string, rrCredentials?: RRCredentials): Promise
     // Inject Source: Cache (unless it is premium RadioReference data)
     if (result && typeof result === 'object') {
       // Only overwrite source if it's NOT already 'API' (RadioReference)
-      if (result.source !== 'API') {
+      if (!isAuthoritative) {
         result.source = 'Cache';
       }
 
@@ -76,16 +99,16 @@ async function getFromCache(key: string, rrCredentials?: RRCredentials): Promise
       }
     }
 
-    return { data: result, groundingChunks: data.grounding_chunks };
+    return { data: result, groundingChunks: data.grounding_chunks, isAuthoritative, updatedAt: data.updated_at ?? undefined };
   } catch (e) {
     console.warn("Cache fetch error:", e);
     return null;
   }
 }
 
-async function getFromCacheCandidates(keys: string[], rrCredentials?: RRCredentials) {
+async function getFromCacheCandidates(keys: string[]) {
   for (const key of keys) {
-    const cached = await getFromCache(key, rrCredentials);
+    const cached = await getFromCache(key);
     if (cached) {
       return { ...cached, cacheKey: key };
     }
@@ -170,18 +193,46 @@ async function fetchJsonWithTimeout(input: RequestInfo | URL, init: RequestInit,
   }
 }
 
-export const searchFrequencies = async (locationQuery: string, userSelectedServices: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials, signal?: AbortSignal): Promise<SearchResponse> => {
+export const searchFrequencies = async (locationQuery: string, userSelectedServices: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials, signal?: AbortSignal, options: SearchRequestOptions = {}): Promise<SearchResponse> => {
   const safeLocation = sanitizeForPrompt(locationQuery);
+  const searchMeta: SearchMeta = { bypassedCache: Boolean(options.bypassCache) };
 
   const resolvedLocation = await resolveLocationDetails(safeLocation, signal);
   const cacheKeys = createLocationCacheKeys(safeLocation, resolvedLocation);
   const cacheKey = resolvedLocation.canonicalKey;
+  const rrLookupZip = /^\d{5}$/.test(safeLocation) ? safeLocation : resolvedLocation.primaryZip;
+  const canFetchAuthoritativeData = Boolean(rrCredentials && rrLookupZip);
 
-  const cached = await getFromCacheCandidates(cacheKeys, rrCredentials);
+  const cached = options.bypassCache ? null : await getFromCacheCandidates(cacheKeys);
   if (cached) {
-    debugLog(`[Cache Hit] Returning cached result for ${safeLocation} via ${cached.cacheKey}.`);
-    const filteredData = filterDataByServices(cached.data, userSelectedServices);
-    return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: 'Retrieved from Cache' };
+    const authoritativeCacheAgeMs = cached.updatedAt ? Date.now() - Date.parse(cached.updatedAt) : null;
+    const shouldRefreshStaleAuthoritativeCache = Boolean(
+      canFetchAuthoritativeData &&
+      cached.isAuthoritative &&
+      typeof options.maxAuthoritativeCacheAgeMs === 'number' &&
+      authoritativeCacheAgeMs !== null &&
+      Number.isFinite(authoritativeCacheAgeMs) &&
+      authoritativeCacheAgeMs > options.maxAuthoritativeCacheAgeMs
+    );
+
+    if (cached.updatedAt) {
+      searchMeta.cacheUpdatedAt = cached.updatedAt;
+    }
+
+    if (canFetchAuthoritativeData && !cached.isAuthoritative) {
+      debugLog(`[Cache Upgrade] Found supplemental cache for ${safeLocation} via ${cached.cacheKey}; fetching live RadioReference data.`);
+    } else if (shouldRefreshStaleAuthoritativeCache) {
+      searchMeta.autoBypassedStaleAuthoritativeCache = true;
+      debugLog(`[Cache Refresh] Authoritative cache for ${safeLocation} is older than threshold; fetching fresh RadioReference data.`);
+    } else {
+      searchMeta.usedAuthoritativeCache = cached.isAuthoritative;
+      if (cached.isAuthoritative && cached.updatedAt) {
+        searchMeta.lastAuthoritativeRefreshAt = cached.updatedAt;
+      }
+      debugLog(`[Cache Hit] Returning cached result for ${safeLocation} via ${cached.cacheKey}.`);
+      const filteredData = filterDataByServices(cached.data, userSelectedServices);
+      return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: 'Retrieved from Cache', searchMeta };
+    }
   }
 
   debugLog(`[Hybrid Search] Starting Fresh Search for ${safeLocation} with canonical key ${cacheKey}...`);
@@ -189,10 +240,18 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   let aiGrounding: any = null;
   let rawText = '';
   const aiLocation = resolvedLocation.searchLabel || resolvedLocation.standardizedName || safeLocation;
-  const rrLookupZip = /^\d{5}$/.test(safeLocation) ? safeLocation : resolvedLocation.primaryZip;
+  const cachedAiSupplement = cached && !cached.isAuthoritative ? cached.data as ScanResult : null;
+  if (cachedAiSupplement) {
+    searchMeta.usedCachedAiSupplement = true;
+  }
+  if (cachedAiSupplement && !aiGrounding && cached.groundingChunks) {
+    aiGrounding = cached.groundingChunks;
+  }
 
   // 1. AI Search (Always run)
-  const aiPromise = (async () => {
+  const aiPromise: Promise<ScanResult | null> = cachedAiSupplement
+    ? Promise.resolve(cachedAiSupplement)
+    : (async () => {
     try {
       debugLog(`[AI Search] Fetching for ${safeLocation}...`);
       const response = await fetchJsonWithTimeout('/api/search', {
@@ -270,10 +329,18 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   if (rrResult && aiResult) {
     debugLog(`[Hybrid Merge] Merging RR (${rrResult.agencies?.length} agcy) + AI (${aiResult.agencies?.length} agcy)`);
     masterData = mergeResults(rrResult, aiResult);
-    rawText = rawText || 'Merged Hybrid Results (RR + AI)';
+    if (cachedAiSupplement || searchMeta.autoBypassedStaleAuthoritativeCache || searchMeta.bypassedCache) {
+      searchMeta.refreshedWithRadioReference = true;
+    }
+    searchMeta.lastAuthoritativeRefreshAt = new Date().toISOString();
+    rawText = rawText || (cachedAiSupplement ? 'Merged Hybrid Results (RR + cached AI)' : 'Merged Hybrid Results (RR + AI)');
   } else if (rrResult) {
     debugLog(`[Hybrid Results] RR Only`);
     masterData = rrResult;
+    if (searchMeta.autoBypassedStaleAuthoritativeCache || searchMeta.bypassedCache) {
+      searchMeta.refreshedWithRadioReference = true;
+    }
+    searchMeta.lastAuthoritativeRefreshAt = new Date().toISOString();
     rawText = "RadioReference Results";
   } else if (aiResult) {
     debugLog(`[Hybrid Results] AI Only`);
@@ -282,12 +349,13 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   } else {
     debugLog(`[Hybrid Search] All fetches failed. Checking Cache as backup...`);
     // Fallback: Check Cache if everything else failed
-    const backupCached = await getFromCacheCandidates(cacheKeys, rrCredentials);
+    const backupCached = options.bypassCache ? null : (cached ?? await getFromCacheCandidates(cacheKeys));
     if (backupCached) {
       debugLog(`[Cache Backup] Found data.`);
       // Filter and return immediately
       const filteredData = filterDataByServices(backupCached.data, userSelectedServices);
-      return { data: filteredData, groundingChunks: backupCached.groundingChunks, rawText: "Retrieved from Cache (Offline Backup)", rrError: rrErrorMessage };
+      searchMeta.usedAuthoritativeCache = backupCached.isAuthoritative;
+      return { data: filteredData, groundingChunks: backupCached.groundingChunks, rawText: "Retrieved from Cache (Offline Backup)", rrError: rrErrorMessage, searchMeta };
     }
     throw new Error("Unable to retrieve frequency data from any source.");
   }
@@ -307,7 +375,7 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
 
   // 4. Return FILTERED data to user
   const filteredData = filterDataByServices(masterData, userSelectedServices);
-  return { data: filteredData, groundingChunks: masterGrounding, rawText, rrError: rrErrorMessage };
+  return { data: filteredData, groundingChunks: masterGrounding, rawText, rrError: rrErrorMessage, searchMeta };
 };
 
 // --- Merge Helper ---
