@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { GoogleGenAI } from "@google/genai";
+import { ensureAppAiConfig, generateAppAiContent } from './appAiProvider';
 
-const MODEL_NAME = "gemini-3-flash-preview";
 const MODEL_TIMEOUT_MS = 40_000;
 const DEBUG_LOGS = process.env.NODE_ENV !== 'production';
 
@@ -11,24 +10,16 @@ function debugLog(...args: unknown[]) {
   }
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  return await Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error(message)), timeoutMs);
-    })
-  ]);
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error("GEMINI_API_KEY not configured in Vercel environment");
+  try {
+    ensureAppAiConfig();
+  } catch (error: any) {
+    console.error(error?.message || 'No AI provider configured');
     return res.status(500).json({ error: 'Server configuration error' });
   }
 
@@ -62,8 +53,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       safeContext?.county && safeContext?.stateCode ? `- County: ${safeContext.county} County, ${safeContext.stateCode}` : '',
       safeContext?.primaryZip ? `- Primary ZIP: ${safeContext.primaryZip}` : '',
     ].filter(Boolean).join('\n');
-
-    const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `
     You are an intelligent interface for the RadioReference Database.
@@ -120,32 +109,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     \`\`\`
   `;
 
-    let response;
-    let usedTools = true;
-
-    try {
-      response = await withTimeout(ai.models.generateContent({
-        model: MODEL_NAME,
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-        },
-      }), MODEL_TIMEOUT_MS, 'AI search timed out');
-    } catch (err: any) {
-      const msg = err.message || JSON.stringify(err);
-      if (msg.includes('API_KEY_INVALID') || msg.includes('400') || msg.includes('403') || msg.includes('PERMISSION_DENIED')) {
-        console.warn("Google Search Tool rejected. Retrying without tools...");
-        usedTools = false;
-        response = await withTimeout(ai.models.generateContent({
-          model: MODEL_NAME,
-          contents: prompt,
-        }), MODEL_TIMEOUT_MS, 'AI search timed out');
-      } else {
-        throw err;
-      }
-    }
-
-    const text = response?.text || "{}";
+    const { text, groundingChunks } = await generateAppAiContent({
+      prompt,
+      timeoutMs: MODEL_TIMEOUT_MS,
+      allowSearchTools: true,
+    });
     let data: any = null;
 
     // Robust JSON Parsing
@@ -179,8 +147,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error('Search API returned unparsable or empty AI payload:', text);
       return res.status(502).json({ error: 'AI returned malformed frequency data.' });
     }
-
-    const groundingChunks = usedTools ? (response?.candidates?.[0]?.groundingMetadata?.groundingChunks || []) : [];
 
     return res.status(200).json({ data, groundingChunks, rawText: text });
 

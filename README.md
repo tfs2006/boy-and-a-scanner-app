@@ -153,6 +153,9 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
    Create a `.env.local` file in the project root:
    ```env
    GEMINI_API_KEY=your_gemini_api_key
+   APP_AI_PROVIDER=openrouter
+   OPENROUTER_API_KEY=your_openrouter_api_key
+   OPENROUTER_APP_MODEL=google/gemini-3-flash-preview
    VITE_SUPABASE_URL=https://your-project.supabase.co
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
    ```
@@ -185,12 +188,18 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 
 | Variable | Scope | Purpose |
 |----------|-------|---------|
+| `APP_AI_PROVIDER` | Server-side only | App AI provider: `gemini` or `openrouter` |
 | `GEMINI_API_KEY` | Server-side only | Google Gemini API key |
+| `GEMINI_APP_MODEL` | Server-side only | Optional Gemini model override for the app |
+| `OPENROUTER_API_KEY` | Server-side only | OpenRouter API key for the app |
+| `OPENROUTER_APP_MODEL` | Server-side only | OpenRouter model id for the app, e.g. `google/gemini-3-flash-preview` |
+| `OPENROUTER_SITE_URL` | Server-side only | Optional OpenRouter referer header for the app |
+| `OPENROUTER_APP_NAME` | Server-side only | Optional OpenRouter app title header |
 | `VITE_SUPABASE_URL` | Browser | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Browser | Supabase public anon key |
 | `RR_APP_KEY` | Server-side only | RadioReference app key |
 
-App search remains Gemini-powered in production. The Oracle precacher has its own separate environment and can run either Gemini or OpenRouter/Kimi.
+The app can now run through direct Gemini or OpenRouter, while the Oracle precacher keeps its own separate environment and provider settings.
 
 ---
 
