@@ -82,11 +82,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     \`\`\`
   `;
 
-    const { text, groundingChunks } = await generateAppAiContent({
+    const aiMeta = await generateAppAiContent({
       prompt,
       timeoutMs: MODEL_TIMEOUT_MS,
       allowSearchTools: true,
     });
+    const { text, groundingChunks } = aiMeta;
     let trip: any = null;
 
     try {
@@ -127,7 +128,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(502).json({ error: 'AI returned malformed trip data.' });
     }
 
-    return res.status(200).json({ trip, groundingChunks });
+    return res.status(200).json({
+      trip,
+      groundingChunks,
+      aiMeta: {
+        provider: aiMeta.provider,
+        model: aiMeta.model,
+        fallbackUsed: aiMeta.fallbackUsed,
+        fallbackFrom: aiMeta.fallbackFrom,
+        usedSearchTools: aiMeta.usedSearchTools,
+      },
+    });
 
   } catch (error: any) {
     console.error("Trip API Error:", error);

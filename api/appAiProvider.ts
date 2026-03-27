@@ -14,6 +14,8 @@ export type AppAiGenerationResult = {
   provider: AppAiProvider;
   model: string;
   usedSearchTools: boolean;
+  fallbackUsed: boolean;
+  fallbackFrom?: AppAiProvider;
 };
 
 type GenerateAppAiContentOptions = {
@@ -118,6 +120,7 @@ async function generateWithGemini(prompt: string, timeoutMs: number, allowSearch
     provider: 'gemini',
     model,
     usedSearchTools,
+    fallbackUsed: false,
   };
 }
 
@@ -167,6 +170,7 @@ async function generateWithOpenRouter(prompt: string, timeoutMs: number): Promis
     provider: 'openrouter',
     model,
     usedSearchTools: false,
+    fallbackUsed: false,
   };
 }
 
@@ -181,7 +185,12 @@ export async function generateAppAiContent(options: GenerateAppAiContentOptions)
   } catch (error) {
     if (provider === 'openrouter' && hasGeminiConfig()) {
       console.warn('OpenRouter request failed. Falling back to Gemini for this request.', error);
-      return await generateWithGemini(options.prompt, options.timeoutMs, Boolean(options.allowSearchTools));
+      const fallback = await generateWithGemini(options.prompt, options.timeoutMs, Boolean(options.allowSearchTools));
+      return {
+        ...fallback,
+        fallbackUsed: true,
+        fallbackFrom: 'openrouter',
+      };
     }
     throw error;
   }

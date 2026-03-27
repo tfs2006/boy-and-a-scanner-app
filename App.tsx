@@ -1,6 +1,6 @@
 
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu, Users, RotateCw } from 'lucide-react';
+import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu, Users, RotateCw, Cpu } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
 import { SearchMeta, SearchResponse, ScanResult, ServiceType } from './types';
@@ -778,6 +778,9 @@ function App() {
 
   // Helper to determine Source Badge style and text
   const getSourceBadge = (source: 'API' | 'AI' | 'Cache', meta?: SearchMeta | null) => {
+    const aiProviderLabel = meta?.aiProvider === 'openrouter' ? 'AI via OpenRouter' : meta?.aiProvider === 'gemini' ? 'AI via Gemini' : null;
+    const aiFallbackLabel = meta?.aiFallbackUsed && meta?.aiFallbackFrom === 'openrouter' ? 'Gemini Fallback Used' : null;
+
     if (source === 'Cache') {
       return (
         <div className="flex flex-wrap items-center gap-3">
@@ -785,6 +788,18 @@ function App() {
             <Zap className="w-4 h-4 fill-purple-400" />
             <span className="text-xs font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Source: </span>Cloud Cache</span>
           </div>
+          {aiProviderLabel && (
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-slate-900/50 border-slate-500/50 text-slate-300" title={meta?.aiModel}>
+              <Cpu className="w-4 h-4" />
+              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">{aiProviderLabel}</span>
+            </div>
+          )}
+          {aiFallbackLabel && (
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-amber-900/30 border-amber-500/50 text-amber-300">
+              <RotateCw className="w-4 h-4" />
+              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">{aiFallbackLabel}</span>
+            </div>
+          )}
           {searchTime > 0 && (
             <div className="text-xs font-mono-tech text-emerald-400 flex items-center gap-1">
               <Timer className="w-3 h-3" />
@@ -801,6 +816,18 @@ function App() {
             <Database className="w-4 h-4" />
             <span className="text-xs font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Source: </span>RadioReference DB</span>
           </div>
+          {aiProviderLabel && (
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-slate-900/50 border-slate-500/50 text-slate-300" title={meta?.aiModel}>
+              <Cpu className="w-4 h-4" />
+              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">{aiProviderLabel}</span>
+            </div>
+          )}
+          {aiFallbackLabel && (
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-amber-900/30 border-amber-500/50 text-amber-300">
+              <RotateCw className="w-4 h-4" />
+              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">{aiFallbackLabel}</span>
+            </div>
+          )}
           {meta?.refreshedWithRadioReference && (
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-cyan-900/30 border-cyan-500/50 text-cyan-300">
               <ShieldCheck className="w-4 h-4" />
@@ -837,6 +864,18 @@ function App() {
           <Bot className="w-4 h-4" />
           <span className="text-xs font-mono-tech font-bold uppercase tracking-wider"><span className="hidden sm:inline">Source: </span>AI Search</span>
         </div>
+        {aiProviderLabel && (
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-slate-900/50 border-slate-500/50 text-slate-300" title={meta?.aiModel}>
+            <Cpu className="w-4 h-4" />
+            <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">{aiProviderLabel}</span>
+          </div>
+        )}
+        {aiFallbackLabel && (
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-amber-900/30 border-amber-500/50 text-amber-300">
+            <RotateCw className="w-4 h-4" />
+            <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">{aiFallbackLabel}</span>
+          </div>
+        )}
         {searchTime > 0 && (
           <div className="text-xs font-mono-tech text-slate-500 flex items-center gap-1">
             <Timer className="w-3 h-3" />

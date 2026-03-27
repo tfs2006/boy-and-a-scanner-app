@@ -109,11 +109,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     \`\`\`
   `;
 
-    const { text, groundingChunks } = await generateAppAiContent({
+    const aiMeta = await generateAppAiContent({
       prompt,
       timeoutMs: MODEL_TIMEOUT_MS,
       allowSearchTools: true,
     });
+    const { text, groundingChunks } = aiMeta;
     let data: any = null;
 
     // Robust JSON Parsing
@@ -148,7 +149,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(502).json({ error: 'AI returned malformed frequency data.' });
     }
 
-    return res.status(200).json({ data, groundingChunks, rawText: text });
+    return res.status(200).json({
+      data,
+      groundingChunks,
+      rawText: text,
+      aiMeta: {
+        provider: aiMeta.provider,
+        model: aiMeta.model,
+        fallbackUsed: aiMeta.fallbackUsed,
+        fallbackFrom: aiMeta.fallbackFrom,
+        usedSearchTools: aiMeta.usedSearchTools,
+      },
+    });
 
   } catch (error: any) {
     console.error("API Error:", error);

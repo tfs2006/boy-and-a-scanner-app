@@ -98,6 +98,11 @@ export interface SearchMeta {
   interpretedLocationLabel?: string;
   interpretedScopeLabel?: string;
   refinementOptions?: SearchRefinementOption[];
+  aiProvider?: 'gemini' | 'openrouter';
+  aiModel?: string;
+  aiFallbackUsed?: boolean;
+  aiFallbackFrom?: 'gemini' | 'openrouter';
+  aiUsedSearchTools?: boolean;
 }
 
 export interface SearchResponse {

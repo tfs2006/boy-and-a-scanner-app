@@ -328,6 +328,13 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
       const json = await response.json();
       aiGrounding = json.groundingChunks || null;
       rawText = json.rawText || 'AI Results';
+      if (json.aiMeta) {
+        searchMeta.aiProvider = json.aiMeta.provider;
+        searchMeta.aiModel = json.aiMeta.model;
+        searchMeta.aiFallbackUsed = Boolean(json.aiMeta.fallbackUsed);
+        searchMeta.aiFallbackFrom = json.aiMeta.fallbackFrom;
+        searchMeta.aiUsedSearchTools = Boolean(json.aiMeta.usedSearchTools);
+      }
       const data = json.data;
       if (data) {
         data.source = 'AI'; // Ensure source is marked
