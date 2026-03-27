@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { ensureAppAiConfig, generateAppAiContent } from './appAiProvider';
+import { ensureAppAiConfig, generateAppAiContent } from './appAiProvider.js';
 
 const MODEL_TIMEOUT_MS = 40_000;
 const DEBUG_LOGS = process.env.NODE_ENV !== 'production';
