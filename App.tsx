@@ -942,7 +942,7 @@ function App() {
                   <Globe className="w-4 h-4" />
                 </a>
                 <a
-                  href="https://scanner-seo-pages.vercel.app/frequencies"
+                  href="https://boyandascanner.com/frequencies"
                   target="_blank"
                   rel="noopener noreferrer"
                   title="Frequency Directory"
@@ -1130,7 +1130,7 @@ function App() {
                   <Globe className="w-4 h-4 text-cyan-400" />
                   <span>Main Website</span>
                 </a>
-                <a href="https://scanner-seo-pages.vercel.app/frequencies" target="_blank" rel="noopener noreferrer"
+                <a href="https://boyandascanner.com/frequencies" target="_blank" rel="noopener noreferrer"
                   onClick={() => setShowMobileMenu(false)}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-violet-400 transition-colors text-sm">
                   <List className="w-4 h-4 text-violet-400" />
@@ -1748,7 +1748,7 @@ function App() {
                       </button>
                       {/^\d{5}$/.test(searchQuery.trim()) && (
                         <a
-                          href={`https://scanner-seo-pages.vercel.app/frequencies/${searchQuery.trim()}`}
+                          href={`https://boyandascanner.com/frequencies/${searchQuery.trim()}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-violet-900/40 border-violet-500/60 text-violet-400 hover:bg-violet-900/60 hover:text-white transition-all shadow-lg shadow-violet-900/20 hover:scale-105"

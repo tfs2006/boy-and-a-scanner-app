@@ -6,7 +6,7 @@
 
 > AI-powered Radio Frequency Intelligence. Find, verify, and program scanner frequencies for any US location.
 
-**Live app:** [boyandascanner.com](https://boyandascanner.com)
+**Live app:** [app.boyandascanner.com](https://app.boyandascanner.com)
 
 ---
 
@@ -353,8 +353,8 @@ Operational notes:
 
 ## Links
 
-- **App:** [boyandascanner.com](https://boyandascanner.com)
-- **Frequency Directory:** [scanner-seo-pages.vercel.app/frequencies](https://scanner-seo-pages.vercel.app/frequencies)
+- **App:** [app.boyandascanner.com](https://app.boyandascanner.com)
+- **Frequency Directory:** [boyandascanner.com/frequencies](https://boyandascanner.com/frequencies)
 - **Merch Store:** [shop.boyandascanner.com](https://shop.boyandascanner.com)
 - **Support the project:** [buymeacoffee.com/boyandascanner](https://buymeacoffee.com/boyandascanner)
 - **Feature requests:** contact@boyandascanner.com
@@ -366,6 +366,13 @@ Operational notes:
 ---
 
 ## Changelog
+
+### March 26, 2026 — Frequency Directory & Domain Migration
+- Migrated `boyandascanner.com` hosting from GitHub Pages to Vercel (`boy-and-a-scanner` Vercel project connected to `tfs2006/boy-and-a-scanner`)
+- Added `vercel.json` to `tfs2006/boy-and-a-scanner` with proxy rewrite: `/frequencies/:path*` → `scanner-seo-pages.vercel.app/frequencies/:path*`
+- Frequency directory now lives at `boyandascanner.com/frequencies` (was `scanner-seo-pages.vercel.app/frequencies`)
+- Updated all in-app cross-links (nav bar, mobile menu, "Frequency Page" result button) to point to `boyandascanner.com/frequencies`
+- All three repos (`boy-and-a-scanner`, `boy-and-a-scanner-app`, `scanner-seo-pages`) connected to Vercel via GitHub App — safe to make private
 
 ### March 26, 2026 — App Provider Visibility + Production Hotfix
 - Added a shared app AI provider layer in `api/appAiProvider.ts` so the app can use OpenRouter or direct Gemini through one code path
