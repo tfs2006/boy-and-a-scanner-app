@@ -12,7 +12,7 @@
 
 ## Overview
 
-Boy & A Scanner is a full-stack web application combining Google Gemini AI, the RadioReference database, and Supabase to deliver scanner frequency intelligence for any US location. Sign in with Google, search any ZIP code or city, and instantly get Police, Fire, EMS, and trunked system frequencies — ready to program into your Uniden SDS100/SDS200.
+Boy & A Scanner is a full-stack web application that combines AI-assisted search, RadioReference lookups, and Supabase-backed caching to deliver scanner frequency intelligence for US locations. Users can search by ZIP, city, county, or GPS coordinates, optionally connect a RadioReference account for authoritative refreshes, and export the resulting Police, Fire, EMS, and trunked system data for scanner programming.
 
 ---
 
@@ -29,7 +29,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 
 ### Hybrid Data Sources
 - **RadioReference SOAP API** — Authoritative verified data for ZIP code lookups (requires RR Premium account)
-- **Google Gemini 3 Flash Preview AI** — Live on-demand AI search for city, county, and GPS coordinate queries in the app
+- **App AI provider layer** — The app supports direct Gemini or OpenRouter for live on-demand AI search, and can fall back from OpenRouter to Gemini when configured
 - **Deterministic Location Resolver** — Normalizes ZIP, city/state, and county/state searches into the same geographic identity before search
 - **Cloud Cache** — Supabase-backed cache keyed by canonical geography with equivalent legacy aliases so ZIP, city, county, and common `St` / `Saint` variants can reuse the same result set
 
@@ -56,6 +56,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 - **Advanced Search** — Filter by State, City, County, or ZIP with structured form fields
 - **Guided Scope Feedback** — The app shows how a query was interpreted and offers one-tap refinement chips for ZIP, city, or county scope when useful
 - **RR Refresh Controls** — RR-backed searches can automatically upgrade AI-only cache entries, with a manual `Refresh RR` override when an immediate authoritative recheck is needed
+- **AI Provider Visibility** — Search results show whether the live request used OpenRouter or direct Gemini, and whether Gemini fallback was used for that request
 - **Mobile hamburger menu** — Full nav + account actions accessible on all screen sizes
 
 ### ScannerSphere Community Hub
@@ -72,7 +73,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, Lucide Icons |
 | Auth | Supabase (Google OAuth) |
 | Database | Supabase (PostgreSQL) — cache, favorites, crowdsource logs |
-| AI | App: Google Gemini 3 Flash Preview (`@google/genai`) • Precacher: Gemini or OpenRouter/Kimi |
+| AI | App: OpenRouter or direct Gemini via `api/appAiProvider.ts` with request-level fallback metadata • Precacher: Gemini or OpenRouter/Kimi |
 | External API | RadioReference SOAP API (premium subscription required) |
 | Maps | Leaflet + react-leaflet (CartoDB dark / OpenStreetMap tiles) |
 | Export | jsPDF, jszip, custom CSV and Sentinel formatters |
@@ -85,9 +86,10 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 
 ```
 ├── api/                   # Vercel serverless functions
-│   ├── search.ts            # POST /api/search  — Gemini AI frequency search
+│   ├── appAiProvider.ts     # Shared app AI provider selection + OpenRouter->Gemini fallback
+│   ├── search.ts            # POST /api/search  — AI-assisted frequency search
 │   ├── rrdb.ts              # POST /api/rrdb    — RadioReference SOAP wrapper
-│   ├── trip.ts              # POST /api/trip    — Gemini trip planner
+│   ├── trip.ts              # POST /api/trip    — AI-assisted trip planner
 │   └── exports/sds100/      # SDS100 scaffold endpoints
 │       ├── validate.ts      # POST /api/exports/sds100/validate
 │       ├── build.ts         # POST /api/exports/sds100/build
@@ -138,7 +140,7 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 ### Prerequisites
 - Node.js 18+
 - A [Supabase](https://supabase.com) project with Google OAuth enabled
-- A [Google Gemini API key](https://aistudio.google.com)
+- At least one server-side AI provider key: [Google Gemini](https://aistudio.google.com) or OpenRouter
 - [Vercel CLI](https://vercel.com/docs/cli) (required for local serverless API routes)
 
 ### Setup
@@ -152,13 +154,18 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 
    Create a `.env.local` file in the project root:
    ```env
-   GEMINI_API_KEY=your_gemini_api_key
    APP_AI_PROVIDER=openrouter
    OPENROUTER_API_KEY=your_openrouter_api_key
    OPENROUTER_APP_MODEL=google/gemini-3-flash-preview
+   GEMINI_API_KEY=your_gemini_api_key
    VITE_SUPABASE_URL=https://your-project.supabase.co
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
    ```
+
+   Notes:
+   - Set `APP_AI_PROVIDER=gemini` if you want the app to use Gemini directly.
+   - If `APP_AI_PROVIDER=openrouter` and `GEMINI_API_KEY` is also present, the app can fall back to Gemini for individual failed OpenRouter requests.
+   - If you only want one provider locally, you can omit the other key.
 
    For RadioReference direct API (optional — enables ZIP lookups against RR database):
    ```env
@@ -200,6 +207,8 @@ Boy & A Scanner is a full-stack web application combining Google Gemini AI, the 
 | `RR_APP_KEY` | Server-side only | RadioReference app key |
 
 The app can now run through direct Gemini or OpenRouter, while the Oracle precacher keeps its own separate environment and provider settings.
+
+In production, the app also threads provider metadata back to the client so the UI can show which provider handled the request.
 
 ---
 
@@ -358,6 +367,11 @@ Operational notes:
 
 ## Changelog
 
+### March 26, 2026 — App Provider Visibility + Production Hotfix
+- Added a shared app AI provider layer in `api/appAiProvider.ts` so the app can use OpenRouter or direct Gemini through one code path
+- Added request metadata for provider, model, and fallback status, then surfaced that state in the UI result badges
+- Fixed a Vercel production serverless crash caused by an ESM module import specifier issue in the shared provider import path
+
 ### March 22, 2026 — Precacher Overhaul
 - Fixed the Oracle worker bug where the Gemini client was never initialized (`ai is not defined`)
 - Reworked cache warming to prioritize recent searches, favorites, and community activity over blanket stale refreshes
@@ -377,4 +391,4 @@ Operational notes:
 - Expanded `profiles` table with `bio`, `location_display`, `frequency_interests` columns
 - `ProfileModal` updated with Bio (280 chars) and Location optional fields
 - Added SEO meta tags (`description`, Open Graph, Twitter Card) to `index.html`
-- All 6 smoke tests continue to pass; 0 TypeScript errors
+- Smoke coverage was updated for the shipped flows; the repo may still contain unrelated TypeScript issues outside these changes
