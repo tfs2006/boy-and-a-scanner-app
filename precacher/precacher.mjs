@@ -451,7 +451,7 @@ async function fetchFromGemini(zip) {
 
     try {
         response = await ai.models.generateContent({
-            model: MODEL_NAME,
+            model: AI_MODEL,
             contents: prompt,
             config: { tools: [{ googleSearch: {} }] },
         });
@@ -461,7 +461,7 @@ async function fetchFromGemini(zip) {
             console.warn(`   └─ Google Search Tool rejected, retrying without tools...`);
             usedTools = false;
             response = await ai.models.generateContent({
-                model: MODEL_NAME,
+                model: AI_MODEL,
                 contents: prompt,
             });
         } else {

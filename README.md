@@ -260,6 +260,8 @@ Current cache-warming strategy:
 - **Nightly RR upgrade queue** — a separate nightly pass can upgrade a small fixed batch of ZIP cache rows that are still AI-only, so authoritative RR data gradually replaces older AI-only entries
 - **ZIP-only SEO pages** — the SEO publisher generates pages only from ZIP cache entries, regardless of whether they were reached through canonical v7 keys or legacy ZIP aliases
 - **Independent execution** — cache warming and SEO publishing run on separate timers so one can succeed without the other
+- **No destructive cache sweep** — the worker only upserts refreshed keys; it does not mass-delete cache rows
+- **Coordinate preservation safety** — when RR returns data without coordinates, merge logic now keeps existing AI coordinates so Explore markers are not dropped
 
 Search behavior notes:
 
@@ -274,8 +276,28 @@ Search behavior notes:
 
 To deploy/update the precacher:
 ```bash
-scp precacher/precacher.mjs oracle:~/boy-and-a-scanner-app/precacher/
-ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs"
+# GitHub-first update path (recommended)
+git push origin main
+ssh oracle "cd ~/boy-and-a-scanner-app && git pull --ff-only origin main"
+ssh oracle "cd ~/boy-and-a-scanner-app/precacher && npm install --omit=dev"
+
+# Start worker manually (foreground)
+ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --cache-only"
+
+# Or start the systemd service (non-blocking)
+ssh oracle "sudo -n systemctl start --no-block precacher-cache.service"
+ssh oracle "systemctl show -p ActiveState -p SubState precacher-cache.service"
+ssh oracle "sudo -n journalctl -u precacher-cache.service -n 120 --no-pager"
+```
+
+If Oracle has local edits that block `git pull`, stash first:
+```bash
+ssh oracle "cd ~/boy-and-a-scanner-app && git stash push -u -m pre-sync"
+```
+
+If the service fails immediately, verify the Oracle env file still exists:
+```bash
+ssh oracle "test -f ~/boy-and-a-scanner-app/precacher/.env && echo env-ok"
 ```
 
 Manual modes:
@@ -348,6 +370,8 @@ Operational notes:
 - Nightly RR upgrade runs report how many AI-only ZIP rows were upgraded and where the cursor will resume next night
 - SEO runs report how many ZIP entries were used as input and how many pages were published
 - The legacy combined `precacher.timer` is replaced by `precacher-cache.timer`, `precacher-seo.timer`, and `precacher-rr-upgrade.timer`
+- Explore map queries now request coordinate-bearing cache rows only, so non-mappable cache entries do not crowd out visible markers
+- March 31, 2026 one-time repair: all `v6_loc_*` cache rows were backfilled to remove null-coordinate records (`v6` null coords reduced to 0)
 
 ---
 
@@ -366,6 +390,12 @@ Operational notes:
 ---
 
 ## Changelog
+
+### March 31, 2026 — Explore Map Stability + Cache Coordinate Safeguards
+- Fixed RR merge behavior so cache writes preserve existing AI coordinates when RR payloads omit `coords`
+- Updated Explore map cache query to pull coordinate-bearing rows first for better marker coverage in the first page
+- Ran one-time Supabase backfill to patch historical null-coordinate `v6_loc_*` rows, restoring marker visibility for legacy cache entries
+- Fixed Oracle precacher Gemini path to use `AI_MODEL` consistently (removed stale `MODEL_NAME` reference)
 
 ### March 26, 2026 — Frequency Directory & Domain Migration
 - Migrated `boyandascanner.com` hosting from GitHub Pages to Vercel (`boy-and-a-scanner` Vercel project connected to `tfs2006/boy-and-a-scanner`)
