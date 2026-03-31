@@ -17,10 +17,12 @@ const exploreMocks = vi.hoisted(() => {
     select: vi.fn((fields: string) => {
       if (fields.includes('locationName:result_data->>locationName')) {
         return {
-          order: () => ({
-            range: async (start: number) => ({
-              data: start === 0 ? firstPage : secondPage,
-              error: null,
+          not: () => ({
+            order: () => ({
+              range: async (start: number) => ({
+                data: start === 0 ? firstPage : secondPage,
+                error: null,
+              }),
             }),
           }),
         };

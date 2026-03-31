@@ -340,7 +340,14 @@ function normalizeName(str) {
 function mergeResults(rr, aiResult) {
     const merged = JSON.parse(JSON.stringify(rr));
     merged.source = 'API';
-    merged.summary = `${rr.summary || rr.locationName || 'RadioReference data'} (Enhanced with AI discovery)`;
+    merged.summary = `${rr.summary || rr.locationName || aiResult?.locationName || 'RadioReference data'} (Enhanced with AI discovery)`;
+
+    // RR responses frequently omit coords, so preserve AI coords for map rendering.
+    if ((merged?.coords?.lat == null || merged?.coords?.lng == null)
+        && aiResult?.coords?.lat != null
+        && aiResult?.coords?.lng != null) {
+        merged.coords = aiResult.coords;
+    }
 
     const existingAgencies = new Set((merged.agencies || []).map((agency) => normalizeName(agency.name)));
     for (const agency of aiResult?.agencies || []) {

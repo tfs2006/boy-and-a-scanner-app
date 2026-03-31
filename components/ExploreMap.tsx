@@ -131,6 +131,7 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
       const metadataQuery = await supabase
         .from('search_cache')
         .select('search_key, updated_at, locationName:result_data->>locationName, coords:result_data->coords')
+        .not('result_data->coords', 'is', null)
         .order('updated_at', { ascending: false })
         .range(offset, end);
 
@@ -155,6 +156,7 @@ export const ExploreMap: React.FC<ExploreMapProps> = ({ isLoggedIn }) => {
         const { data, error: err } = await supabase
           .from('search_cache')
           .select('search_key, result_data, updated_at')
+          .not('result_data->coords', 'is', null)
           .order('updated_at', { ascending: false })
           .range(offset, end);
 

@@ -439,7 +439,13 @@ function mergeResults(rr: ScanResult, ai: ScanResult): ScanResult {
   // Clone RR as base
   const merged = JSON.parse(JSON.stringify(rr));
   merged.source = 'API'; // Keeps 'verified' badge usually
-  merged.summary = rr.summary + " (Enhanced with AI discovery)";
+  const baseSummary = rr.summary || rr.locationName || ai.locationName || 'RadioReference data';
+  merged.summary = `${baseSummary} (Enhanced with AI discovery)`;
+
+  // RR payloads can omit coordinates; keep AI coordinates so map features stay usable.
+  if ((merged.coords?.lat == null || merged.coords?.lng == null) && ai.coords?.lat != null && ai.coords?.lng != null) {
+    merged.coords = ai.coords;
+  }
 
   // 1. Merge Agencies
   const existingNames = new Set(merged.agencies.map((a: any) => normalizeName(a.name)));
