@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 
 const DEFAULT_GEMINI_MODEL = 'gemini-3-flash-preview';
-const DEFAULT_OPENROUTER_MODEL = 'google/gemini-3-flash-preview';
+const DEFAULT_OPENROUTER_MODEL = 'qwen/qwen3.6-plus-preview:free';
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_OPENROUTER_SITE_URL = 'https://www.boyandascanner.com';
 const DEFAULT_OPENROUTER_APP_NAME = 'Boy & A Scanner App';

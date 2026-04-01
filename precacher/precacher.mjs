@@ -27,7 +27,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ZIPCODES = JSON.parse(readFileSync(join(__dirname, 'zipcodes.json'), 'utf-8'));
 
 const AI_PROVIDER = (process.env.AI_PROVIDER || 'gemini').trim().toLowerCase();
-const AI_MODEL = process.env.AI_MODEL?.trim() || (AI_PROVIDER === 'openrouter' ? 'moonshotai/kimi-k2' : 'gemini-2.0-flash');
+const AI_MODEL = process.env.AI_MODEL?.trim() || (AI_PROVIDER === 'openrouter' ? 'qwen/qwen3.6-plus-preview:free' : 'gemini-2.0-flash');
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
