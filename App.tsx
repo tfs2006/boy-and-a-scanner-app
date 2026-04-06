@@ -1,9 +1,9 @@
 
-import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu, Users, RotateCw, Cpu } from 'lucide-react';
+import React, { Suspense, lazy, useEffect, useRef, useState, useCallback } from 'react';
+import { Search, Radio, Loader2, MapPin, ExternalLink, SignalHigh, Database, Bot, Map, LocateFixed, ShieldCheck, Zap, AlertCircle, CheckCircle2, Timer, LogOut, User, Navigation, CheckSquare, Square, ChevronDown, ChevronUp, Filter, BookOpen, Coffee, Globe, ShoppingBag, MessageSquarePlus, FileDown, Settings, Eye, EyeOff, Star, X, Copy, Sun, Moon, Trophy, PlusCircle, Ear, List, Bell, Printer, Menu, Users, RotateCw, Cpu, Flame, Target, Crosshair, TrendingUp, Award, Sparkles, Shield, Activity } from 'lucide-react';
 import { searchFrequencies, getDatabaseStats } from './services/geminiService';
 import { RRCredentials } from './services/rrApi';
-import { SearchMeta, SearchResponse, ScanResult, ServiceType } from './types';
+import { SearchMeta, SearchResponse, ScanResult, ServiceType, UserStats } from './types';
 import { FrequencyDisplay } from './components/FrequencyDisplay';
 import { Auth } from './components/Auth';
 import { isValidLocationInput } from './utils/security';
@@ -15,6 +15,7 @@ import { loadServicePreferences, saveServicePreferences, getLocalServicePreferen
 import { getNotifications, getUnreadCount, markAllRead, AppNotification } from './services/notificationsService';
 import { SearchSuggestions, saveSearchToHistory } from './components/SearchSuggestions';
 import { SearchForm } from './components/SearchForm';
+import { getMyStats, getBadge, getBadgeProgress, getBadgePercent } from './services/crowdsourceService';
 import {
   CONVENTIONAL_SYSTEM_FILTER_KEYS as SDS100_CONVENTIONAL_KEYS,
   TRUNKED_SYSTEM_FILTER_KEYS as SDS100_TRUNKED_KEYS,
@@ -88,6 +89,92 @@ function formatRelativeTimestamp(value: string): string {
   return `${absDays}d ago`;
 }
 
+// ---------------------------------------------------------------------------
+// Scan counter — localStorage-based lifetime scan tracker
+// ---------------------------------------------------------------------------
+const SCAN_COUNT_KEY = 'scan_count';
+const SCAN_LAST_DATE_KEY = 'scan_last_date';
+const SCAN_STREAK_KEY = 'scan_streak';
+const DAILY_CHALLENGE_KEY = 'daily_challenge';
+
+function getScanCount(): number {
+  return Number.parseInt(localStorage.getItem(SCAN_COUNT_KEY) || '0', 10);
+}
+function incrementScanCount(): number {
+  const next = getScanCount() + 1;
+  localStorage.setItem(SCAN_COUNT_KEY, String(next));
+  return next;
+}
+
+function getScanStreak(): { streak: number; isActiveToday: boolean } {
+  const lastDate = localStorage.getItem(SCAN_LAST_DATE_KEY);
+  const streak = Number.parseInt(localStorage.getItem(SCAN_STREAK_KEY) || '0', 10);
+  const today = new Date().toISOString().slice(0, 10);
+  if (!lastDate) return { streak: 0, isActiveToday: false };
+  if (lastDate === today) return { streak, isActiveToday: true };
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  if (lastDate === yesterday) return { streak, isActiveToday: false };
+  return { streak: 0, isActiveToday: false }; // broken
+}
+
+function recordScanToday(): { streak: number; isNewDay: boolean } {
+  const today = new Date().toISOString().slice(0, 10);
+  const lastDate = localStorage.getItem(SCAN_LAST_DATE_KEY);
+  const currentStreak = Number.parseInt(localStorage.getItem(SCAN_STREAK_KEY) || '0', 10);
+
+  if (lastDate === today) return { streak: currentStreak, isNewDay: false };
+
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const newStreak = lastDate === yesterday ? currentStreak + 1 : 1;
+
+  localStorage.setItem(SCAN_LAST_DATE_KEY, today);
+  localStorage.setItem(SCAN_STREAK_KEY, String(newStreak));
+  return { streak: newStreak, isNewDay: true };
+}
+
+// Daily challenge: pick a random US state each day
+function getDailyChallenge(): { state: string; completed: boolean } {
+  const today = new Date().toISOString().slice(0, 10);
+  const stored = localStorage.getItem(DAILY_CHALLENGE_KEY);
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+      if (parsed.date === today) return parsed;
+    } catch { /* regenerate */ }
+  }
+  const states = ['Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming'];
+  // Deterministic daily pick using date as seed
+  const seed = today.split('-').map(Number).reduce((a, b) => a * 31 + b, 0);
+  const state = states[seed % states.length];
+  const challenge = { date: today, state, completed: false };
+  localStorage.setItem(DAILY_CHALLENGE_KEY, JSON.stringify(challenge));
+  return challenge;
+}
+
+function completeDailyChallenge() {
+  const today = new Date().toISOString().slice(0, 10);
+  const challenge = getDailyChallenge();
+  if (challenge.state) {
+    localStorage.setItem(DAILY_CHALLENGE_KEY, JSON.stringify({ ...challenge, date: today, completed: true }));
+  }
+}
+
+// Milestone messages for scan counts
+function getScanMilestone(count: number): string | null {
+  const milestones: Record<number, string> = {
+    1: 'First Scan Complete!',
+    5: '5 Scans — Getting Started!',
+    10: '10 Scans — Double Digits!',
+    25: '25 Scans — Quarter Century!',
+    50: '50 Scans — Halfway to 100!',
+    100: '100 Scans — Centurion Scanner!',
+    250: '250 Scans — Pro Level!',
+    500: '500 Scans — Elite Scanner!',
+    1000: '1,000 Scans — Legendary!',
+  };
+  return milestones[count] ?? null;
+}
+
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -119,6 +206,14 @@ function App() {
   const [showFilters, setShowFilters] = useState(false);
   const [prefsSaved, setPrefsSaved] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Gamification State
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [scanCount, setScanCount] = useState(getScanCount);
+  const [scanStreak, setScanStreak] = useState(() => getScanStreak().streak);
+  const [dailyChallenge, setDailyChallenge] = useState(getDailyChallenge);
+  const [celebration, setCelebration] = useState<{ message: string; sub?: string } | null>(null);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   // Notifications
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -347,6 +442,12 @@ function App() {
       setFavorites(favs);
       setServiceTypes(prefs);
       setUnreadCount(unread);
+
+      // Load user stats (non-critical — don't block on failure)
+      try {
+        const stats = await getMyStats();
+        if (!cancelled && stats) setUserStats(stats);
+      } catch { /* stats unavailable — not critical */ }
     };
 
     void bootstrapUserState();
@@ -731,6 +832,35 @@ function App() {
         setResult(response.data);
         setGrounding(response.groundingChunks);
         setSearchMeta(response.searchMeta ?? null);
+
+        // --- Gamification: track scan and check milestones ---
+        const newCount = incrementScanCount();
+        setScanCount(newCount);
+        const { streak, isNewDay } = recordScanToday();
+        setScanStreak(streak);
+
+        // Check daily challenge completion
+        const challenge = getDailyChallenge();
+        if (!challenge.completed && query.toLowerCase().includes(challenge.state.toLowerCase())) {
+          completeDailyChallenge();
+          setDailyChallenge({ ...challenge, completed: true });
+          setCelebration({ message: 'Daily Challenge Complete!', sub: `You scanned a location in ${challenge.state}` });
+          setShowConfetti(true);
+          setTimeout(() => { setCelebration(null); setShowConfetti(false); }, 4000);
+        } else {
+          const milestone = getScanMilestone(newCount);
+          if (milestone) {
+            setCelebration({ message: milestone, sub: streak > 1 ? `${streak}-day scan streak!` : undefined });
+            setShowConfetti(true);
+            setTimeout(() => { setCelebration(null); setShowConfetti(false); }, 4000);
+          } else if (isNewDay && streak > 1) {
+            setCelebration({ message: `${streak}-Day Streak!`, sub: 'Keep scanning daily to grow your streak' });
+            setTimeout(() => setCelebration(null), 3500);
+          }
+        }
+
+        // Refresh user stats
+        getMyStats().then(s => { if (s) setUserStats(s); }).catch(() => {});
         if (response.searchMeta?.autoBypassedStaleAuthoritativeCache) {
           pushStatusNotice({
             tone: 'info',
@@ -902,6 +1032,35 @@ function App() {
 
   return (
     <div className="min-h-screen theme-bg-main theme-text-main pb-24 md:pb-20 selection:bg-amber-500/30 transition-colors duration-300">
+      {/* Celebration Toast */}
+      {celebration && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] animate-celebration-in pointer-events-none">
+          <div className="bg-gradient-to-r from-amber-600 to-orange-500 text-white px-6 py-3 rounded-2xl shadow-2xl shadow-amber-900/40 flex items-center gap-3">
+            <Sparkles className="w-6 h-6 animate-spin-slow" />
+            <div>
+              <div className="font-mono-tech font-bold text-sm tracking-wide">{celebration.message}</div>
+              {celebration.sub && <div className="text-xs opacity-90 mt-0.5">{celebration.sub}</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confetti Burst */}
+      {showConfetti && (
+        <div className="fixed inset-0 z-[199] pointer-events-none overflow-hidden" aria-hidden="true">
+          {Array.from({ length: 30 }).map((_, i) => (
+            <div
+              key={i}
+              className="confetti-piece"
+              style={{
+                left: `${Math.random() * 100}%`,
+                animationDelay: `${Math.random() * 0.5}s`,
+                backgroundColor: ['#f59e0b', '#06b6d4', '#8b5cf6', '#ef4444', '#10b981', '#ec4899'][i % 6],
+              }}
+            />
+          ))}
+        </div>
+      )}
       {/* Navbar */}
       <nav className="sticky top-0 z-50 bg-[#0f172a]/95 backdrop-blur-md border-b border-slate-800 select-none print-hide">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
@@ -979,6 +1138,28 @@ function App() {
                 <Coffee className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
                 <span className="hidden sm:inline">Support</span>
               </a>
+
+              {/* User Stats Pill — shows streak + scan count in navbar */}
+              {session && (
+                <div className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700 text-[10px] font-mono-tech">
+                  {scanStreak > 0 && (
+                    <span className={`flex items-center gap-1 ${scanStreak >= 7 ? 'text-amber-400' : scanStreak >= 3 ? 'text-orange-400' : 'text-slate-400'}`} title={`${scanStreak}-day scan streak`}>
+                      <Flame className="w-3 h-3" />
+                      {scanStreak}
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1 text-cyan-400" title={`${scanCount} total scans`}>
+                    <Target className="w-3 h-3" />
+                    {scanCount}
+                  </span>
+                  {userStats && (
+                    <span className="flex items-center gap-1 text-purple-400" title={`${userStats.total_points} pts — ${userStats.badge}`}>
+                      <Award className="w-3 h-3" />
+                      {userStats.total_points}
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Hamburger - mobile only */}
               <button
@@ -1375,70 +1556,140 @@ function App() {
           <>
             {/* Search Hero */}
             {!result && !loading && (
-              <div className="mt-8 sm:mt-16 text-center max-w-2xl mx-auto animate-fade-in-up">
-                <div className="inline-flex items-center justify-center p-4 rounded-full bg-slate-800/50 mb-6 border border-slate-700 shadow-xl shadow-cyan-900/10">
-                  <SignalHigh className="w-10 h-10 text-cyan-400" />
+              <div className="mt-6 sm:mt-10 text-center max-w-2xl mx-auto animate-fade-in-up">
+                {/* Welcome Greeting */}
+                <div className="mb-6">
+                  <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2 tracking-tight">
+                    {scanCount > 0 ? 'Welcome Back' : 'Start Scanning'}
+                    {scanStreak >= 2 && (
+                      <span className="ml-2 inline-flex items-center gap-1 text-amber-400 text-lg align-middle">
+                        <Flame className="w-5 h-5" />{scanStreak}
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-sm sm:text-base text-slate-400">
+                    {scanCount === 0
+                      ? 'Search any US location to discover local scanner frequencies.'
+                      : `${scanCount} scan${scanCount === 1 ? '' : 's'} completed. What are you scanning today?`}
+                  </p>
                 </div>
-                <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4 sm:mb-6 tracking-tight">
-                  Frequency Intelligence. <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500">Decoded.</span>
-                </h2>
+
+                {/* Quick Scan Action Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8 max-w-xl mx-auto">
+                  {/* GPS Quick Scan */}
+                  <button
+                    onClick={handleGeoLocation}
+                    className="group relative flex flex-col items-center gap-2 p-4 rounded-xl border border-cyan-500/30 bg-gradient-to-b from-cyan-900/20 to-slate-900/50 hover:border-cyan-400/60 hover:from-cyan-900/40 transition-all duration-200 hover:scale-[1.03] hover:shadow-lg hover:shadow-cyan-900/20"
+                  >
+                    <div className="p-2 rounded-full bg-cyan-600/20 group-hover:bg-cyan-600/30 transition-colors">
+                      <Crosshair className="w-6 h-6 text-cyan-400" />
+                    </div>
+                    <span className="text-sm font-bold text-white font-mono-tech">SCAN HERE</span>
+                    <span className="text-[10px] text-slate-400 font-mono-tech">Use GPS</span>
+                  </button>
+
+                  {/* Daily Challenge Card */}
+                  <button
+                    onClick={() => {
+                      const challenge = getDailyChallenge();
+                      handleFavoriteClick(challenge.state);
+                    }}
+                    disabled={dailyChallenge.completed}
+                    className={`group relative flex flex-col items-center gap-2 p-4 rounded-xl border transition-all duration-200 hover:scale-[1.03] hover:shadow-lg ${
+                      dailyChallenge.completed
+                        ? 'border-emerald-500/40 bg-gradient-to-b from-emerald-900/20 to-slate-900/50'
+                        : 'border-amber-500/30 bg-gradient-to-b from-amber-900/20 to-slate-900/50 hover:border-amber-400/60 hover:from-amber-900/40 hover:shadow-amber-900/20'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-full transition-colors ${dailyChallenge.completed ? 'bg-emerald-600/20' : 'bg-amber-600/20 group-hover:bg-amber-600/30'}`}>
+                      {dailyChallenge.completed ? <CheckCircle2 className="w-6 h-6 text-emerald-400" /> : <Target className="w-6 h-6 text-amber-400" />}
+                    </div>
+                    <span className="text-sm font-bold text-white font-mono-tech">{dailyChallenge.completed ? 'COMPLETE' : 'DAILY CHALLENGE'}</span>
+                    <span className="text-[10px] text-slate-400 font-mono-tech">{dailyChallenge.state}</span>
+                  </button>
+
+                  {/* Explore Card */}
+                  <button
+                    onClick={() => setMode('explore')}
+                    className="group relative flex flex-col items-center gap-2 p-4 rounded-xl border border-purple-500/30 bg-gradient-to-b from-purple-900/20 to-slate-900/50 hover:border-purple-400/60 hover:from-purple-900/40 transition-all duration-200 hover:scale-[1.03] hover:shadow-lg hover:shadow-purple-900/20"
+                  >
+                    <div className="p-2 rounded-full bg-purple-600/20 group-hover:bg-purple-600/30 transition-colors">
+                      <Globe className="w-6 h-6 text-purple-400" />
+                    </div>
+                    <span className="text-sm font-bold text-white font-mono-tech">EXPLORE MAP</span>
+                    <span className="text-[10px] text-slate-400 font-mono-tech">Browse cached scans</span>
+                  </button>
+                </div>
+
+                {/* User Progress Bar (if logged in and has stats) */}
+                {userStats && (
+                  <div className="max-w-md mx-auto mb-6 p-3 rounded-xl bg-slate-800/50 border border-slate-700">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{
+                          userStats.badge === 'Elite' ? '👑' :
+                          userStats.badge === 'Regional Expert' ? '🏆' :
+                          userStats.badge === 'Pro Scanner' ? '⚡' :
+                          userStats.badge === 'Scanner' ? '📻' : '🎧'
+                        }</span>
+                        <span className="text-xs font-mono-tech font-bold text-white uppercase">{userStats.badge}</span>
+                      </div>
+                      <span className="text-xs text-slate-400 font-mono-tech">{getBadgeProgress(userStats.total_points)}</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full transition-all duration-700 ease-out"
+                        style={{ width: `${getBadgePercent(userStats.total_points)}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between mt-2 text-[10px] font-mono-tech text-slate-500">
+                      <span>{userStats.total_points} pts</span>
+                      <span>{userStats.confirmations_count} confirmations · {userStats.submissions_count} submissions</span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Database Global Stats */}
                 {dbCount > 0 && (
-                  <div className="mb-8 flex justify-center">
+                  <div className="mb-6 flex justify-center">
                     <div className="inline-flex items-center gap-3 px-4 py-2 bg-gradient-to-r from-slate-900 to-slate-800 rounded-lg border border-slate-700 shadow-lg">
                       <Database className="w-4 h-4 text-purple-400" />
                       <div className="text-left">
                         <span className="block text-xl font-bold font-mono-tech text-white leading-none">{dbCount}</span>
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wider">Community Indexed Locations</span>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider">Indexed Locations</span>
                       </div>
                     </div>
                   </div>
                 )}
 
-                <p className="text-base sm:text-lg text-slate-400 mb-6 sm:mb-10 leading-relaxed px-2">
-                  Access the <strong>RadioReference Database</strong> to find Police, Fire, and EMS frequencies for any area.
-                  Now featuring <strong>Cross-Reference Verification</strong> for maximum accuracy.
-                </p>
-                <div className="flex justify-center gap-4 flex-wrap">
+                <div className="flex justify-center gap-3 flex-wrap">
                   <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-900/20 rounded-full border border-emerald-900/50 text-emerald-400 text-xs font-mono-tech">
-                    <ShieldCheck className="w-3 h-3" /> Secure Input Active
+                    <ShieldCheck className="w-3 h-3" /> Secure
                   </div>
 
                   {/* RadioReference API Status */}
                   {rrCredentials ? (
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-green-900/50 bg-green-900/20 text-green-400 text-xs font-mono-tech">
-                      <Database className="w-3 h-3" /> RR Direct API Linked
+                      <Database className="w-3 h-3" /> RR Linked
                     </div>
                   ) : (
                     <button
                       onClick={() => setShowRRSettings(true)}
                       className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-amber-900/50 bg-amber-900/20 text-amber-400 text-xs font-mono-tech hover:bg-amber-900/30 transition-colors cursor-pointer"
                     >
-                      <Settings className="w-3 h-3" /> Connect RR Account
+                      <Settings className="w-3 h-3" /> Connect RR
                     </button>
                   )}
 
-                  {/* Detailed Cache Status Indicator */}
-                  {cacheStatus === 'checking' && (
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-slate-700 bg-slate-800 text-slate-400 text-xs font-mono-tech">
-                      <Loader2 className="w-3 h-3 animate-spin" /> Connecting...
-                    </div>
-                  )}
+                  {/* Cache Status Indicator */}
                   {cacheStatus === 'connected' && (
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-900/50 bg-emerald-900/20 text-emerald-400 text-xs font-mono-tech">
-                      <Zap className="w-3 h-3 fill-emerald-400" /> Cloud Cache Active
-                    </div>
-                  )}
-                  {cacheStatus === 'offline' && (
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-slate-700 bg-slate-800 text-slate-500 text-xs font-mono-tech">
-                      <Zap className="w-3 h-3" /> Cache Offline
+                      <Zap className="w-3 h-3 fill-emerald-400" /> Cache Active
                     </div>
                   )}
                   {cacheStatus === 'error' && (
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-red-900/50 bg-red-900/20 text-red-400 text-xs font-mono-tech" title={cacheErrorMsg}>
-                      <AlertCircle className="w-3 h-3" /> Cache Config Error
+                      <AlertCircle className="w-3 h-3" /> Cache Error
                     </div>
                   )}
                 </div>
@@ -1640,6 +1891,58 @@ function App() {
                       <MapDisplay coords={result.coords} locationName={result.locationName} />
                     </Suspense>
                   )}
+
+                  {/* Result Summary Hero Card */}
+                  <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-700 rounded-2xl p-5 sm:p-6 shadow-xl">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="p-2 bg-cyan-600/20 rounded-lg">
+                        <SignalHigh className="w-5 h-5 text-cyan-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg sm:text-xl font-bold text-white font-mono-tech tracking-tight truncate">{result.locationName}</h3>
+                        <p className="text-xs text-slate-400 font-mono-tech">Scan complete · {result.source === 'API' ? 'RadioReference Verified' : result.source === 'Cache' ? 'From Cache' : 'AI Results'}</p>
+                      </div>
+                    </div>
+
+                    {/* Quick Stats Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-700/60 text-center">
+                        <div className="text-2xl font-bold font-mono-tech text-cyan-400">{result.agencies?.length || 0}</div>
+                        <div className="text-[10px] text-slate-400 font-mono-tech uppercase tracking-wider mt-1">Agencies</div>
+                      </div>
+                      <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-700/60 text-center">
+                        <div className="text-2xl font-bold font-mono-tech text-emerald-400">
+                          {(result.agencies || []).reduce((sum, a) => sum + (a.frequencies?.length || 0), 0)}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono-tech uppercase tracking-wider mt-1">Frequencies</div>
+                      </div>
+                      <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-700/60 text-center">
+                        <div className="text-2xl font-bold font-mono-tech text-purple-400">{result.trunkedSystems?.length || 0}</div>
+                        <div className="text-[10px] text-slate-400 font-mono-tech uppercase tracking-wider mt-1">Trunked Systems</div>
+                      </div>
+                      <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-700/60 text-center">
+                        <div className="text-2xl font-bold font-mono-tech text-amber-400">
+                          {(result.trunkedSystems || []).reduce((sum, s) => sum + (s.talkgroups?.length || 0), 0)}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-mono-tech uppercase tracking-wider mt-1">Talkgroups</div>
+                      </div>
+                    </div>
+
+                    {/* Top Service Categories - visual breakdown */}
+                    {result.agencies && result.agencies.length > 0 && (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {Array.from(new Set(result.agencies.map(a => a.category))).slice(0, 6).map(cat => (
+                          <span key={cat} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-[10px] font-mono-tech text-slate-300 uppercase tracking-wider">
+                            {cat === 'Police' || cat === 'Law Enforcement' ? <Shield className="w-3 h-3 text-blue-400" /> :
+                             cat === 'Fire' ? <Flame className="w-3 h-3 text-orange-400" /> :
+                             cat === 'EMS' ? <Activity className="w-3 h-3 text-red-400" /> :
+                             <Radio className="w-3 h-3 text-slate-400" />}
+                            {cat}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mb-6">
                     {/* Pin / Compare Button */}
