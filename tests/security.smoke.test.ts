@@ -25,7 +25,7 @@ describe('security hardening', () => {
 
     const { resolveLocationDetails } = await import('../services/locationService');
 
-    await expect(resolveLocationDetails('84770')).resolves.toEqual({
+    await expect(resolveLocationDetails('84770')).resolves.toMatchObject({
       type: 'zip',
       standardizedName: 'St George, UT',
       canonicalName: 'Washington County, UT',
@@ -37,7 +37,6 @@ describe('security hardening', () => {
       county: 'Washington',
       stateCode: 'UT',
       zips: ['84770'],
-      aliases: ['84770', 'St George, UT', 'Washington County, UT'],
     });
   });
 

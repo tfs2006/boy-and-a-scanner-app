@@ -25,11 +25,17 @@ const CSV_HEADERS = [
 ];
 
 /**
- * Helper to escape characters for CSV format
+ * Helper to escape characters for CSV format.
+ * Defuses formula injection by prefixing dangerous leading chars with a single-quote.
  */
 const escapeCsv = (str: string | undefined): string => {
   if (!str) return '';
-  const safeStr = String(str).replace(/"/g, '""'); // Double up quotes
+  let s = String(str);
+  // Defuse CSV formula injection (cells starting with =, +, -, @, \t, \r)
+  if (/^[=+\-@\t\r]/.test(s)) {
+    s = "'" + s;
+  }
+  const safeStr = s.replace(/"/g, '""'); // Double up quotes
   if (safeStr.includes(',') || safeStr.includes('"') || safeStr.includes('\n')) {
     return `"${safeStr}"`;
   }

@@ -542,116 +542,140 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 function inferStateIdFromZip(zip: string): string | null {
   if (!zip || zip.length < 3) return null;
   const prefix = parseInt(zip.substring(0, 2));
-  const prefix3 = parseInt(zip.substring(0, 3)); // For Wyoming/Idaho edge cases
+  const prefix3 = parseInt(zip.substring(0, 3));
 
   if (isNaN(prefix)) return null;
 
   // -- Explicit State Mapping based on ZIP Prefixes --
-  // AL (1) 35-36
-  if (prefix >= 35 && prefix <= 36) return '1';
-  // AK (2) 99
-  if (prefix === 99) return '2';
-  // AZ (3) 85-86
-  if (prefix >= 85 && prefix <= 86) return '3';
-  // AR (4) 71-72
-  if (prefix >= 71 && prefix <= 72) return '4';
-  // CA (5) 90-96
-  if (prefix >= 90 && prefix <= 96) return '5';
-  // CO (6) 80-81
-  if (prefix >= 80 && prefix <= 81) return '6';
-  // CT (7) 06
-  if (prefix === 6) return '7';
-  // DE (8) 19
-  if (prefix === 19) return '8';
-  // FL (9) 32-34
-  if (prefix >= 32 && prefix <= 34) return '9';
-  // GA (10) 30-31, 39
-  if ((prefix >= 30 && prefix <= 31) || prefix === 39) return '10';
-  // HI (11) 96
-  if (prefix === 96) return '11';
-  // ID (12) 83 (Excluding 830, 831 which are WY)
+  // Order matters: narrow/exact prefixes MUST come before broader ranges
+  // that overlap them. E.g. HI (968-969) before CA (900-961).
+
+  // DC (51) 200-205  (3-digit, check first)
+  if (prefix3 >= 200 && prefix3 <= 205) return '51';
+  // WY (50) 820-831
+  if (prefix === 82) return '50';
+  // ID (12) 832-838  /  WY (50) 830-831
   if (prefix === 83) {
     if (prefix3 === 830 || prefix3 === 831) return '50'; // WY
     return '12'; // ID
   }
-  // IL (13) 60-62
-  if (prefix >= 60 && prefix <= 62) return '13';
-  // IN (14) 46-47
-  if (prefix >= 46 && prefix <= 47) return '14';
-  // IA (15) 50-52
-  if (prefix >= 50 && prefix <= 52) return '15';
-  // KS (16) 66-67
-  if (prefix >= 66 && prefix <= 67) return '16';
-  // KY (17) 40-42
-  if (prefix >= 40 && prefix <= 42) return '17';
-  // LA (18) 70-71
-  if (prefix >= 70 && prefix <= 71) return '18';
-  // ME (19) 03-04
-  if (prefix >= 3 && prefix <= 4) return '19';
-  // MD (20) 20-21
-  if (prefix >= 20 && prefix <= 21) return '20';
-  // MA (21) 01-02, 05
-  if ((prefix >= 1 && prefix <= 2) || prefix === 5) return '21';
-  // MI (22) 48-49
-  if (prefix >= 48 && prefix <= 49) return '22';
-  // MN (23) 55-56
-  if (prefix >= 55 && prefix <= 56) return '23';
-  // MS (24) 38-39
-  if (prefix >= 38 && prefix <= 39) return '24';
-  // MO (25) 63-65
-  if (prefix >= 63 && prefix <= 65) return '25';
-  // MT (26) 59
-  if (prefix === 59) return '26';
-  // NE (27) 68-69
-  if (prefix >= 68 && prefix <= 69) return '27';
-  // NV (28) 88-89
-  if (prefix >= 88 && prefix <= 89) return '28';
-  // NH (29) 03
-  if (prefix === 3) return '29';
-  // NJ (30) 07-08
+  // HI (11) 967-968  — must precede CA which covers 900-961
+  if (prefix3 >= 967 && prefix3 <= 969) return '11';
+  // AK (2) 995-999  — must precede WA which covers 980-994
+  if (prefix3 >= 995 && prefix3 <= 999) return '2';
+  // WA (47) 980-994
+  if (prefix3 >= 980 && prefix3 <= 994) return '47';
+  // NH (29) 030-038  — must precede ME which covers 039-049
+  if (prefix3 >= 30 && prefix3 <= 38) return '29';
+  // ME (19) 039-049
+  if (prefix3 >= 39 && prefix3 <= 49) return '19';
+  // VT (45) 050-059  — must precede MA which covers 010-027
+  if (prefix3 >= 50 && prefix3 <= 59) return '45';
+  // RI (39) 028-029  — must precede MA which covers 010-027
+  if (prefix3 >= 28 && prefix3 <= 29) return '39';
+  // MA (21) 010-027
+  if (prefix3 >= 10 && prefix3 <= 27) return '21';
+  // CT (7) 060-069
+  if (prefix === 6) return '7';
+  // NJ (30) 070-089
   if (prefix >= 7 && prefix <= 8) return '30';
-  // NM (31) 87-88
-  if (prefix >= 87 && prefix <= 88) return '31';
-  // NY (32) 10-14
-  if (prefix >= 10 && prefix <= 14) return '32';
-  // NC (33) 27-28
-  if (prefix >= 27 && prefix <= 28) return '33';
-  // ND (34) 58
-  if (prefix === 58) return '34';
-  // OH (35) 43-45
-  if (prefix >= 43 && prefix <= 45) return '35';
-  // OK (36) 73-74
-  if (prefix >= 73 && prefix <= 74) return '36';
-  // OR (37) 97
-  if (prefix === 97) return '37';
-  // PA (38) 15-19
+  // DE (8) 197-199  — must precede PA which covers 150-196
+  if (prefix3 >= 197 && prefix3 <= 199) return '8';
+  // PA (38) 150-196
   if (prefix >= 15 && prefix <= 19) return '38';
-  // RI (39) 02
-  if (prefix === 2) return '39';
-  // SC (40) 29
-  if (prefix === 29) return '40';
-  // SD (41) 57
-  if (prefix === 57) return '41';
-  // TN (42) 37-38
-  if (prefix >= 37 && prefix <= 38) return '42';
-  // TX (43) 75-79
-  if (prefix >= 75 && prefix <= 79) return '43';
-  // UT (44) 84
-  if (prefix === 84) return '44';
-  // VT (45) 05
-  if (prefix === 5) return '45';
-  // VA (46) 22-24
-  if (prefix >= 22 && prefix <= 24) return '46';
-  // WA (47) 98-99
-  if (prefix >= 98 && prefix <= 99) return '47';
-  // WV (48) 24-26
-  if (prefix >= 24 && prefix <= 26) return '48';
-  // WI (49) 53-54
+  // NM (31) 870-884  — must precede NV which covers 889-898
+  if (prefix === 87) return '31';
+  // NV (28) 889-898
+  if (prefix === 89) return '28';
+  // NV/NM overlap at 88: 880-884 = NM, 889-898 = NV
+  if (prefix === 88) {
+    if (prefix3 >= 880 && prefix3 <= 884) return '31'; // NM
+    return '28'; // NV
+  }
+  // WV (48) 247-268  — must precede VA which covers 220-246
+  if (prefix >= 25 && prefix <= 26) return '48';
+  if (prefix === 24) {
+    if (prefix3 >= 247 && prefix3 <= 249) return '48'; // WV
+    return '46'; // VA
+  }
+  // VA (46) 220-246
+  if (prefix >= 22 && prefix <= 23) return '46';
+  // GA (10) 300-319, 398-399  — must precede FL
+  if (prefix >= 30 && prefix <= 31) return '10';
+  if (prefix === 39) {
+    if (prefix3 >= 398 && prefix3 <= 399) return '10'; // GA
+    return '24'; // MS
+  }
+  // FL (9) 320-349
+  if (prefix >= 32 && prefix <= 34) return '9';
+  // AL (1) 350-369
+  if (prefix >= 35 && prefix <= 36) return '1';
+  // TN (42) 370-385
+  if (prefix === 37) return '42';
+  // MS (24) 386-397  /  TN overlap at 38
+  if (prefix === 38) {
+    if (prefix3 >= 386 && prefix3 <= 397) return '24'; // MS
+    return '42'; // TN
+  }
+  // KY (17) 400-427
+  if (prefix >= 40 && prefix <= 42) return '17';
+  // OH (35) 430-458
+  if (prefix >= 43 && prefix <= 45) return '35';
+  // IN (14) 460-479
+  if (prefix >= 46 && prefix <= 47) return '14';
+  // MI (22) 480-499
+  if (prefix >= 48 && prefix <= 49) return '22';
+  // IA (15) 500-528
+  if (prefix >= 50 && prefix <= 52) return '15';
+  // WI (49) 530-549
   if (prefix >= 53 && prefix <= 54) return '49';
-  // WY (50) 82, 830, 831
-  if (prefix === 82 || prefix3 === 830 || prefix3 === 831) return '50';
-  // DC (51) 200
-  if (prefix3 >= 200 && prefix3 <= 205) return '51';
+  // MN (23) 550-567
+  if (prefix >= 55 && prefix <= 56) return '23';
+  // SD (41) 570-577
+  if (prefix === 57) return '41';
+  // ND (34) 580-588
+  if (prefix === 58) return '34';
+  // MT (26) 590-599
+  if (prefix === 59) return '26';
+  // IL (13) 600-629
+  if (prefix >= 60 && prefix <= 62) return '13';
+  // MO (25) 630-658
+  if (prefix >= 63 && prefix <= 65) return '25';
+  // KS (16) 660-679
+  if (prefix >= 66 && prefix <= 67) return '16';
+  // NE (27) 680-693
+  if (prefix >= 68 && prefix <= 69) return '27';
+  // LA (18) 700-714
+  if (prefix >= 70 && prefix <= 71) return '18';
+  // AR (4) 716-729
+  if (prefix === 72) return '4';
+  // OK (36) 730-749
+  if (prefix >= 73 && prefix <= 74) return '36';
+  // TX (43) 750-799
+  if (prefix >= 75 && prefix <= 79) return '43';
+  // CO (6) 800-816
+  if (prefix >= 80 && prefix <= 81) return '6';
+  // UT (44) 840-847
+  if (prefix === 84) return '44';
+  // AZ (3) 850-865
+  if (prefix >= 85 && prefix <= 86) return '3';
+  // CA (5) 900-961
+  if (prefix >= 90 && prefix <= 96) return '5';
+  // OR (37) 970-979
+  if (prefix === 97) return '37';
+  // NC (33) 270-289
+  if (prefix >= 27 && prefix <= 28) return '33';
+  // SC (40) 290-299
+  if (prefix === 29) return '40';
+  // MD (20) 206-219
+  if (prefix >= 20 && prefix <= 21) return '20';
+  // NY (32) 100-149
+  if (prefix >= 10 && prefix <= 14) return '32';
+  // AR overlap: 716-729 spans prefix 71 (also LA 700-714)
+  if (prefix === 71) {
+    if (prefix3 >= 716 && prefix3 <= 719) return '4'; // AR
+    return '18'; // LA
+  }
 
   return null;
 }

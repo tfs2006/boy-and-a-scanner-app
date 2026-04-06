@@ -47,7 +47,12 @@ function filterScanResultBySystemTypes(data: ScanResult, selectedFilters?: Syste
 
 const esc = (str: string | undefined): string => {
     if (!str) return '';
-    const s = String(str).replace(/"/g, '""');
+    let s = String(str);
+    // Defuse CSV formula injection (cells starting with =, +, -, @, \t, \r)
+    if (/^[=+\-@\t\r]/.test(s)) {
+        s = "'" + s;
+    }
+    s = s.replace(/"/g, '""');
     if (s.includes(',') || s.includes('"') || s.includes('\n')) return `"${s}"`;
     return s;
 };

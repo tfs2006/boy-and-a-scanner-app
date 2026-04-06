@@ -15,6 +15,14 @@ export type ExportResult =
 const CHIRP_HEADER =
   'Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,Mode,TStep,Skip,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE';
 
+/**
+ * Defuse CSV formula injection by prefixing dangerous leading characters.
+ */
+function defuseFormula(str: string): string {
+  if (/^[=+\-@\t\r]/.test(str)) return "'" + str;
+  return str;
+}
+
 function cleanName(raw: string): string {
   // CHIRP name: strip non-alphanumeric (except space/dash), truncate to 8 chars
   return raw.replace(/[^A-Za-z0-9 \-]/g, '').slice(0, 8).trim();
@@ -57,11 +65,13 @@ export function exportChirpCSV(data: ScanResult): ExportResult {
       if (!freqStr) continue;
       const freqMhz = parseFloat(freq.freq);
       const mode = inferMode(freqMhz);
-      const comment = [agency.name, freq.description, freq.alphaTag]
-        .filter(Boolean)
-        .join(' — ')
-        .replace(/"/g, "'")
-        .slice(0, 200);
+      const comment = defuseFormula(
+        [agency.name, freq.description, freq.alphaTag]
+          .filter(Boolean)
+          .join(' — ')
+          .replace(/"/g, "'")
+          .slice(0, 200)
+      );
       rows.push(
         `${location},${nameTag},${freqStr},,0.000000,,88.5,88.5,023,NN,${mode},5.00,,"${comment}",,,,`
       );
@@ -78,7 +88,7 @@ export function exportChirpCSV(data: ScanResult): ExportResult {
       if (!freqStr) continue;
       const freqMhz = parseFloat(ccFreq.freq);
       const mode = inferMode(freqMhz);
-      const comment = `${sys.name} Control Channel`.replace(/"/g, "'").slice(0, 200);
+      const comment = defuseFormula(`${sys.name} Control Channel`.replace(/"/g, "'").slice(0, 200));
       rows.push(
         `${location},${nameTag},${freqStr},,0.000000,,88.5,88.5,023,NN,${mode},5.00,,"${comment}",,,,`
       );

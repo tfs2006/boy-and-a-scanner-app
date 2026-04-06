@@ -7,15 +7,15 @@ import { ScanResult, GeneratedManual, ManualSection, ManualStep, TrunkedSystem, 
 const mapSystemType = (rrType: string): string => {
   const t = rrType.toLowerCase();
   if (t.includes('p25') || t.includes('project 25')) {
-    if (t.includes('one') || t.includes('single')) return 'P25 One Frequency';
+    if (/\bone\b/.test(t) || t.includes('single')) return 'P25 One Frequency';
     return 'P25 Trunk';
   }
   if (t.includes('dmr') || t.includes('mototrbo') || t.includes('capacity') || t.includes('connect')) {
-    if (t.includes('one') || t.includes('single')) return 'DMR One Frequency';
+    if (/\bone\b/.test(t) || t.includes('single')) return 'DMR One Frequency';
     return 'MotoTRBO Trunk';
   }
   if (t.includes('nxdn') || t.includes('nexedge') || t.includes('idas')) {
-    if (t.includes('one') || t.includes('single')) return 'NXDN One Frequency';
+    if (/\bone\b/.test(t) || t.includes('single')) return 'NXDN One Frequency';
     return 'NXDN Trunk';
   }
   if (t.includes('edacs')) return 'EDACS';
