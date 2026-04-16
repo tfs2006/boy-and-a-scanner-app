@@ -6,6 +6,10 @@ import {
   LeaderboardEntry,
   UserStats,
 } from '../types';
+import {
+  rememberMissingOptionalTable,
+  shouldSkipOptionalTable,
+} from './supabaseOptionalTableGuard';
 
 // ---------------------------------------------------------------------------
 // Points awarded for each action (mirrors DB trigger logic for display)
@@ -376,4 +380,108 @@ async function incrementUserStat(
       last_activity: new Date().toISOString(),
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// "Report Wrong" flags — optional table (frequency_flags).
+// If the table doesn't exist yet, every call short-circuits gracefully.
+// ---------------------------------------------------------------------------
+export type FrequencyFlagReason =
+  | 'wrong_frequency'
+  | 'off_air'
+  | 'bad_agency'
+  | 'bad_mode'
+  | 'outdated'
+  | 'other';
+
+const FLAGS_TABLE = 'frequency_flags';
+
+export async function reportFrequencyWrong(payload: {
+  frequency: string;
+  locationQuery: string;
+  agencyName?: string;
+  reason: FrequencyFlagReason;
+  note?: string;
+}): Promise<'flagged' | 'duplicate' | 'unavailable' | 'error'> {
+  if (!supabase) return 'error';
+  if (shouldSkipOptionalTable(FLAGS_TABLE)) return 'unavailable';
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return 'error';
+
+  // Dedupe: same (user, freq, loc, reason) within 24 hours = no-op.
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  let existing = supabase
+    .from(FLAGS_TABLE)
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('frequency', payload.frequency.trim())
+    .eq('location_query', payload.locationQuery.trim())
+    .eq('reason', payload.reason)
+    .gte('created_at', dayAgo);
+  existing = payload.agencyName?.trim()
+    ? existing.eq('agency_name', payload.agencyName.trim())
+    : existing.is('agency_name', null);
+
+  const { data: dupRow, error: dupErr } = await existing.maybeSingle();
+  if (dupErr) {
+    if (rememberMissingOptionalTable(FLAGS_TABLE, dupErr)) return 'unavailable';
+    console.error('[flags] dedupe check failed:', dupErr.message);
+    return 'error';
+  }
+  if (dupRow) return 'duplicate';
+
+  const { error } = await supabase.from(FLAGS_TABLE).insert({
+    user_id: user.id,
+    frequency: payload.frequency.trim(),
+    location_query: payload.locationQuery.trim(),
+    agency_name: payload.agencyName?.trim() || null,
+    reason: payload.reason,
+    note: payload.note?.slice(0, 500) || null,
+  });
+  if (error) {
+    if (rememberMissingOptionalTable(FLAGS_TABLE, error)) return 'unavailable';
+    console.error('[flags] insert failed:', error.message);
+    return 'error';
+  }
+  return 'flagged';
+}
+
+/**
+ * Batch-fetch per-row flag counts for a scan result. Returns a Map keyed
+ * exactly like getBatchConfirmationCounts(): `${agencyLower}::${freq}`.
+ */
+export async function getBatchFlagCounts(
+  rows: Array<{ frequency: string; agencyName?: string }>,
+  locationQuery: string
+): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (!supabase || rows.length === 0) return map;
+  if (shouldSkipOptionalTable(FLAGS_TABLE)) return map;
+
+  const freqs = [...new Set(rows.map((r) => r.frequency.trim()))];
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from(FLAGS_TABLE)
+    .select('frequency, agency_name')
+    .in('frequency', freqs)
+    .eq('location_query', locationQuery.trim())
+    .gte('created_at', cutoff);
+
+  if (error) {
+    rememberMissingOptionalTable(FLAGS_TABLE, error);
+    return map;
+  }
+  if (!data) return map;
+
+  for (const row of rows) {
+    const key = `${(row.agencyName || '').trim().toLowerCase()}::${row.frequency.trim()}`;
+    const count = data.filter(
+      (rec) =>
+        rec.frequency === row.frequency.trim() &&
+        (rec.agency_name || '') === (row.agencyName || '')
+    ).length;
+    if (count > 0) map.set(key, count);
+  }
+  return map;
 }
