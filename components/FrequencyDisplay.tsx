@@ -1,8 +1,11 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ScanResult, Agency, TrunkedSystem, FrequencyConfirmationCount } from '../types';
-import { Radio, Shield, Flame, Activity, Hash, Zap, CheckCircle2, AlertTriangle, SearchCheck, Signal, Ear, Loader2, SlidersHorizontal, X, Search, Download, ChevronDown, ChevronUp } from 'lucide-react';
-import { logConfirmation, getBatchConfirmationCounts } from '../services/crowdsourceService';
+import { Radio, Shield, Flame, Activity, Hash, Zap, CheckCircle2, AlertTriangle, SearchCheck, Signal, Ear, Loader2, SlidersHorizontal, X, Search, Download, ChevronDown, ChevronUp, Flag } from 'lucide-react';
+import { logConfirmation, getBatchConfirmationCounts, getBatchFlagCounts } from '../services/crowdsourceService';
+import { ReliabilityBadge } from './ReliabilityBadge';
+import { ReportWrongModal } from './ReportWrongModal';
+import { trackStat } from '../utils/achievements';
 import {
   CONVENTIONAL_SYSTEM_FILTER_KEYS as CONV_FILTER_KEYS,
   TRUNKED_SYSTEM_FILTER_KEYS as SYS_FILTER_KEYS,
@@ -172,8 +175,10 @@ interface AgencyCardProps {
   agency: Agency;
   locationQuery: string;
   counts: Map<string, FrequencyConfirmationCount>;
+  flagCounts: Map<string, number>;
   confirmedSet: Set<string>;
   onConfirm: (freq: string, agencyName: string) => void;
+  onReportWrong: (freq: string, agencyName: string) => void;
   isLoggedIn: boolean;
 }
 
@@ -243,7 +248,27 @@ const HeardItButton: React.FC<{
   );
 };
 
-const AgencyCard: React.FC<AgencyCardProps> = ({ agency, locationQuery, counts, confirmedSet, onConfirm, isLoggedIn }) => {
+const ReportWrongButton: React.FC<{
+  freq: string;
+  agencyName: string;
+  isLoggedIn: boolean;
+  onReport: (freq: string, agencyName: string) => void;
+}> = ({ freq, agencyName, isLoggedIn, onReport }) => (
+  <button
+    onClick={() => isLoggedIn && onReport(freq, agencyName)}
+    disabled={!isLoggedIn}
+    title={isLoggedIn ? 'Report this frequency as wrong' : 'Sign in to report'}
+    className={`p-1 rounded border text-[10px] font-mono-tech transition
+      ${isLoggedIn
+        ? 'border-slate-700 text-slate-500 hover:text-amber-300 hover:border-amber-500/50 hover:bg-amber-950/30'
+        : 'border-slate-800 text-slate-600 cursor-not-allowed'}`}
+    aria-label={`Report ${freq} as wrong`}
+  >
+    <Flag className="w-3 h-3" />
+  </button>
+);
+
+const AgencyCard: React.FC<AgencyCardProps> = ({ agency, locationQuery, counts, flagCounts, confirmedSet, onConfirm, onReportWrong, isLoggedIn }) => {
   const getIcon = (cat: string) => {
     const c = (cat || '').toLowerCase();
     if (c.includes('police') || c.includes('sheriff') || c.includes('law')) return <Shield className="w-5 h-5 text-blue-400" title="Law Enforcement" />;
@@ -304,16 +329,31 @@ const AgencyCard: React.FC<AgencyCardProps> = ({ agency, locationQuery, counts, 
                   </td>
                   <td className="px-4 py-3 text-slate-400">{freq.description}</td>
                   <td className="px-4 py-3">
-                    <HeardItButton
-                      freq={freq.freq}
-                      agencyName={agency.name}
-                      locationQuery={locationQuery}
-                      count={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.count ?? 0}
-                      lastHeard={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.last_heard ?? null}
-                      confirmed={confirmedSet.has(getFrequencyRowKey(freq.freq, agency.name))}
-                      isLoggedIn={isLoggedIn}
-                      onConfirm={onConfirm}
-                    />
+                    <div className="flex items-center justify-end gap-2 flex-wrap">
+                      <ReliabilityBadge
+                        origin={agency.origin}
+                        communityCount={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.count ?? 0}
+                        lastHeard={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.last_heard ?? null}
+                        flagCount={flagCounts.get(getFrequencyRowKey(freq.freq, agency.name)) ?? 0}
+                        compact
+                      />
+                      <HeardItButton
+                        freq={freq.freq}
+                        agencyName={agency.name}
+                        locationQuery={locationQuery}
+                        count={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.count ?? 0}
+                        lastHeard={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.last_heard ?? null}
+                        confirmed={confirmedSet.has(getFrequencyRowKey(freq.freq, agency.name))}
+                        isLoggedIn={isLoggedIn}
+                        onConfirm={onConfirm}
+                      />
+                      <ReportWrongButton
+                        freq={freq.freq}
+                        agencyName={agency.name}
+                        isLoggedIn={isLoggedIn}
+                        onReport={onReportWrong}
+                      />
+                    </div>
                   </td>
                 </tr>
 
@@ -341,16 +381,30 @@ const AgencyCard: React.FC<AgencyCardProps> = ({ agency, locationQuery, counts, 
                     <div className="text-sm text-slate-400 mb-2">
                       {freq.description}
                     </div>
-                    <HeardItButton
-                      freq={freq.freq}
-                      agencyName={agency.name}
-                      locationQuery={locationQuery}
-                      count={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.count ?? 0}
-                      lastHeard={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.last_heard ?? null}
-                      confirmed={confirmedSet.has(getFrequencyRowKey(freq.freq, agency.name))}
-                      isLoggedIn={isLoggedIn}
-                      onConfirm={onConfirm}
-                    />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <ReliabilityBadge
+                        origin={agency.origin}
+                        communityCount={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.count ?? 0}
+                        lastHeard={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.last_heard ?? null}
+                        flagCount={flagCounts.get(getFrequencyRowKey(freq.freq, agency.name)) ?? 0}
+                      />
+                      <HeardItButton
+                        freq={freq.freq}
+                        agencyName={agency.name}
+                        locationQuery={locationQuery}
+                        count={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.count ?? 0}
+                        lastHeard={counts.get(getFrequencyRowKey(freq.freq, agency.name))?.last_heard ?? null}
+                        confirmed={confirmedSet.has(getFrequencyRowKey(freq.freq, agency.name))}
+                        isLoggedIn={isLoggedIn}
+                        onConfirm={onConfirm}
+                      />
+                      <ReportWrongButton
+                        freq={freq.freq}
+                        agencyName={agency.name}
+                        isLoggedIn={isLoggedIn}
+                        onReport={onReportWrong}
+                      />
+                    </div>
                   </td>
                 </tr>
               </React.Fragment>
@@ -569,8 +623,12 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
 
   // Confirmation counts from DB
   const [counts, setCounts] = useState<Map<string, FrequencyConfirmationCount>>(new Map());
+  // Per-row flag counts (optional feature; empty map when table missing)
+  const [flagCounts, setFlagCounts] = useState<Map<string, number>>(new Map());
   // Frequencies confirmed this session (prevent double-tapping)
   const [confirmedSet, setConfirmedSet] = useState<Set<string>>(new Set());
+  // "Report wrong" modal target
+  const [reportTarget, setReportTarget] = useState<{ freq: string; agencyName: string } | null>(null);
 
   // --- System type filter state ---
   const [activeFilters, setActiveFilters] = useState<Set<SystemFilterKey>>(new Set());
@@ -710,6 +768,9 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
     getBatchConfirmationCounts(allRows, locationQuery)
       .then(setCounts)
       .catch(err => console.warn('Failed to load confirmation counts:', err));
+    getBatchFlagCounts(allRows, locationQuery)
+      .then(setFlagCounts)
+      .catch(err => console.warn('Failed to load flag counts:', err));
   }, [data, locationQuery]);
 
   const handleConfirm = useCallback(async (freq: string, agencyName: string) => {
@@ -728,6 +789,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
         });
         return updated;
       });
+      trackStat({ confirms: 1 });
     } else if (result === 'duplicate') {
       // Mark as confirmed this session — button shows confirmed state to prevent re-click confusion
       setConfirmedSet(prev => new Set(prev).add(rowKey));
@@ -966,8 +1028,10 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
                 agency={agency}
                 locationQuery={locationQuery}
                 counts={counts}
+                flagCounts={flagCounts}
                 confirmedSet={confirmedSet}
                 onConfirm={handleConfirm}
+                onReportWrong={(freq, agencyName) => setReportTarget({ freq, agencyName })}
                 isLoggedIn={isLoggedIn}
               />
             ))
@@ -1085,6 +1149,23 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({ data, locati
           )}
         </div>
       </div>
+
+      <ReportWrongModal
+        open={Boolean(reportTarget)}
+        onClose={() => setReportTarget(null)}
+        frequency={reportTarget?.freq ?? ''}
+        agencyName={reportTarget?.agencyName}
+        locationQuery={locationQuery}
+        onReported={() => {
+          if (!reportTarget) return;
+          const rowKey = getFrequencyRowKey(reportTarget.freq, reportTarget.agencyName);
+          setFlagCounts(prev => {
+            const next = new Map(prev);
+            next.set(rowKey, (next.get(rowKey) ?? 0) + 1);
+            return next;
+          });
+        }}
+      />
     </div>
   );
 };

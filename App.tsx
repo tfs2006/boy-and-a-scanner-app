@@ -24,6 +24,10 @@ import {
   trunkedSystemMatchesFilter,
   type SystemFilterKey,
 } from './utils/systemTypeFilters';
+import { trackStat, setStreak, onAchievementUnlocked, type Achievement } from './utils/achievements';
+import { updateAddressBarPermalink } from './utils/sharing';
+import { captureRefFromUrl, maybeFireReferralReward } from './utils/referrals';
+import { ShareCard } from './components/ShareCard';
 
 const TripPlanner = lazy(async () => ({ default: (await import('./components/TripPlanner')).TripPlanner }));
 const ProgrammingManual = lazy(async () => ({ default: (await import('./components/ProgrammingManual')).ProgrammingManual }));
@@ -282,14 +286,32 @@ function App() {
   }, [statusNotice]);
 
   // URL param: auto-search when arriving from SEO frequency pages (?q=ZIP)
+  // and capture any `?ref=` invite code before touching the URL.
   const pendingUrlQuery = useRef<string | null>(
     new URLSearchParams(window.location.search).get('q')
   );
   useEffect(() => {
+    // Capture invite code (first-touch attribution) before anything else.
+    captureRefFromUrl();
     if (pendingUrlQuery.current) {
-      window.history.replaceState({}, '', window.location.pathname);
+      // Keep ?q= in the address bar so the page is shareable; strip other params.
+      const url = new URL(window.location.href);
+      const q = url.searchParams.get('q');
+      // Preserve only q — drop ref so it's not re-captured on every reload.
+      const clean = new URL(window.location.pathname, window.location.origin);
+      if (q) clean.searchParams.set('q', q);
+      window.history.replaceState({}, '', clean.toString());
     }
   }, []);
+
+  // Subscribe to local-first achievement unlocks → celebration toast.
+  useEffect(() => {
+    return onAchievementUnlocked((a: Achievement) => {
+      setCelebration({ message: `${a.icon} Achievement: ${a.title}`, sub: `${a.description} (+${a.points} pts)` });
+      setTimeout(() => setCelebration(null), 3500);
+    });
+  }, []);
+
   useEffect(() => {
     if (session && !authLoading && pendingUrlQuery.current) {
       const q = pendingUrlQuery.current;
@@ -833,18 +855,29 @@ function App() {
         setGrounding(response.groundingChunks);
         setSearchMeta(response.searchMeta ?? null);
 
+        // Update permalink in the address bar so users can copy/share directly.
+        updateAddressBarPermalink(query);
+
+        // Fire a one-time referral reward signal if this browser was invited.
+        maybeFireReferralReward('scan');
+
         // --- Gamification: track scan and check milestones ---
         const newCount = incrementScanCount();
         setScanCount(newCount);
         const { streak, isNewDay } = recordScanToday();
         setScanStreak(streak);
 
+        // Local-first achievements
+        trackStat({ scans: 1 });
+        setStreak(streak);
+
         // Check daily challenge completion
         const challenge = getDailyChallenge();
         if (!challenge.completed && query.toLowerCase().includes(challenge.state.toLowerCase())) {
           completeDailyChallenge();
           setDailyChallenge({ ...challenge, completed: true });
-          setCelebration({ message: 'Daily Challenge Complete!', sub: `You scanned a location in ${challenge.state}` });
+          trackStat({ dailiesDone: 1 });
+          setCelebration({ message: 'Daily Challenge Complete!', sub: `You scanned a location in ${challenge.state} (+10 pts)` });
           setShowConfetti(true);
           setTimeout(() => { setCelebration(null); setShowConfetti(false); }, 4000);
         } else {
@@ -2074,6 +2107,25 @@ function App() {
                       <PlusCircle className="w-4 h-4" />
                       Submit a Frequency
                     </button>
+                  </div>
+                  <div className="mb-4">
+                    <ShareCard
+                      kind="scan"
+                      headline={result.locationName || searchQuery}
+                      subline={(() => {
+                        const agencyCount = (result.agencies || []).length;
+                        const freqCount = (result.agencies || []).reduce((s, a) => s + (a.frequencies?.length || 0), 0);
+                        const sysCount = (result.trunkedSystems || []).length;
+                        const parts: string[] = [];
+                        if (freqCount) parts.push(`${freqCount} freq${freqCount === 1 ? '' : 's'}`);
+                        if (agencyCount) parts.push(`${agencyCount} agenc${agencyCount === 1 ? 'y' : 'ies'}`);
+                        if (sysCount) parts.push(`${sysCount} trunked`);
+                        return parts.join(' · ');
+                      })()}
+                      query={searchQuery}
+                      shareText={`Just scanned ${result.locationName || searchQuery} on Boy & A Scanner — found live frequencies in seconds.`}
+                      onShared={() => trackStat({ shares: 1 })}
+                    />
                   </div>
                   <FrequencyDisplay
                     data={result}

@@ -18,6 +18,8 @@ export interface ShareCardProps {
   shareText?: string;
   /** Compact variant renders without the big logo block. */
   compact?: boolean;
+  /** Called when the user actually shares or copies (not on cancel/error). */
+  onShared?: (outcome: 'shared' | 'copied') => void;
 }
 
 const ICONS: Record<ShareKind, React.ReactNode> = {
@@ -42,6 +44,7 @@ export const ShareCard: React.FC<ShareCardProps> = ({
   ref,
   shareText,
   compact,
+  onShared,
 }) => {
   const [status, setStatus] = useState<'idle' | 'shared' | 'copied' | 'error'>('idle');
 
@@ -63,6 +66,7 @@ export const ShareCard: React.FC<ShareCardProps> = ({
     else if (outcome === 'error')  setStatus('error');
     // cancelled = no visible change
     if (outcome === 'shared' || outcome === 'copied') {
+      onShared?.(outcome);
       setTimeout(() => setStatus('idle'), 2500);
     }
   };

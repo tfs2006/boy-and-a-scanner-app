@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Trophy, Ear, Radio, Flame, Star, Zap, RefreshCw, TrendingUp, Users, Award } from 'lucide-react';
 import { LeaderboardEntry, UserStats } from '../types';
 import { getLeaderboard, getMyStats, getBadge, getBadgeProgress, getBadgePercent } from '../services/crowdsourceService';
+import { AchievementsPanel } from './AchievementsPanel';
+import { ShareCard } from './ShareCard';
+import { getMyRef, buildMyShareLink } from '../utils/referrals';
+import { trackStat } from '../utils/achievements';
 
 interface LeaderboardProps {
   currentUserId?: string;
@@ -263,6 +267,51 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ currentUserId }) => {
                     <span className={`font-bold ${item.color}`}>{item.pts}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* Local-first achievements */}
+            <AchievementsPanel />
+
+            {/* Share badge */}
+            <ShareCard
+              kind="badge"
+              headline={myStats.badge}
+              subline={`${myStats.total_points.toLocaleString()} pts · ${myStats.streak_days}-day streak`}
+              shareText={`I'm ranked ${myStats.badge} on Boy & A Scanner with ${myStats.total_points.toLocaleString()} points!`}
+              onShared={() => trackStat({ shares: 1 })}
+            />
+
+            {/* Referral link */}
+            <div className="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4">
+              <h4 className="text-xs font-bold text-slate-400 font-mono-tech uppercase tracking-wider mb-2 flex items-center gap-2">
+                <Users className="w-4 h-4" /> Invite other scanners
+              </h4>
+              <p className="text-[11px] text-slate-500 mb-3">
+                Share your link. When someone scans for the first time using it, you both earn bonus points.
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={buildMyShareLink()}
+                  className="flex-1 bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs font-mono-tech text-cyan-300 focus:outline-none focus:border-cyan-500"
+                  aria-label="Your referral link"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(buildMyShareLink());
+                      trackStat({ shares: 1 });
+                    } catch { /* ignore */ }
+                  }}
+                  className="px-3 py-1.5 rounded border border-cyan-500/50 bg-cyan-950/40 text-cyan-300 text-xs font-mono-tech hover:bg-cyan-900/60"
+                >
+                  Copy
+                </button>
+              </div>
+              <div className="mt-2 text-[10px] text-slate-600 font-mono-tech">
+                Your code: <span className="text-slate-400">{getMyRef()}</span>
               </div>
             </div>
           </div>
