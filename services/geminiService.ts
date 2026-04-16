@@ -239,6 +239,100 @@ async function fetchJsonWithTimeout(input: RequestInfo | URL, init: RequestInit,
   }
 }
 
+// ---------------------------------------------------------------------------
+// Retry helper — transient failures (network, 5xx, timeout) get up to two
+// retries with jittered exponential backoff. Abort signals are honored and
+// NEVER retried; 4xx responses (except 429) are treated as permanent.
+// ---------------------------------------------------------------------------
+const DEFAULT_MAX_RETRIES = 2;
+
+function isAbortError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as { name?: string }).name === 'AbortError');
+}
+
+async function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+  await new Promise<void>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function fetchJsonWithRetry(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMessage: string,
+  options?: { timeoutMs?: number; maxRetries?: number; onRetry?: (attempt: number, reason: string) => void }
+): Promise<{ response: Response; attempts: number }> {
+  const maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const timeoutMs = options?.timeoutMs ?? CLIENT_REQUEST_TIMEOUT_MS;
+
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetchJsonWithTimeout(input, init, timeoutMessage, timeoutMs);
+
+      // Retry transient server errors and rate limits; 4xx is permanent.
+      if (response.ok || response.status < 500 && response.status !== 429) {
+        return { response, attempts: attempt + 1 };
+      }
+
+      lastError = new Error(`HTTP ${response.status}`);
+      if (attempt === maxRetries) return { response, attempts: attempt + 1 };
+      options?.onRetry?.(attempt + 1, `HTTP ${response.status}`);
+    } catch (error: any) {
+      // Never retry user-initiated aborts.
+      if (isAbortError(error) || init.signal?.aborted) throw error;
+      lastError = error;
+      if (attempt === maxRetries) throw error;
+      options?.onRetry?.(attempt + 1, error?.message || 'network error');
+    }
+
+    // Jittered exponential backoff: 400–900ms, 900–1900ms, ...
+    const baseMs = 400 * Math.pow(2, attempt);
+    const jitter = Math.floor(Math.random() * 500);
+    await sleepWithSignal(baseMs + jitter, init.signal ?? undefined);
+  }
+  // Unreachable but keeps TS happy.
+  throw lastError ?? new Error('fetchJsonWithRetry: exhausted retries');
+}
+
+async function withRetry<T>(
+  task: (attempt: number) => Promise<T>,
+  options?: { maxRetries?: number; signal?: AbortSignal; isTransient?: (err: unknown) => boolean; onRetry?: (attempt: number, reason: string) => void }
+): Promise<T> {
+  const maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const isTransient = options?.isTransient ?? ((err: unknown) => {
+    if (isAbortError(err)) return false;
+    const msg = (err as { message?: string })?.message?.toLowerCase() ?? '';
+    // RR SOAP/HTTP transient patterns we've seen in the wild.
+    return /timeout|timed out|network|fetch failed|socket|econn|5\d\d|gateway|temporar/i.test(msg);
+  });
+
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await task(attempt);
+    } catch (error: any) {
+      if (isAbortError(error) || options?.signal?.aborted) throw error;
+      lastError = error;
+      if (attempt === maxRetries || !isTransient(error)) throw error;
+      options?.onRetry?.(attempt + 1, error?.message || 'transient error');
+      const baseMs = 500 * Math.pow(2, attempt);
+      const jitter = Math.floor(Math.random() * 500);
+      await sleepWithSignal(baseMs + jitter, options?.signal);
+    }
+  }
+  throw lastError ?? new Error('withRetry: exhausted retries');
+}
+
 export const searchFrequencies = async (locationQuery: string, userSelectedServices: ServiceType[] = ['Police', 'Fire', 'EMS'], rrCredentials?: RRCredentials, signal?: AbortSignal, options: SearchRequestOptions = {}): Promise<SearchResponse> => {
   const safeLocation = sanitizeForPrompt(locationQuery);
   const searchMeta: SearchMeta = { bypassedCache: Boolean(options.bypassCache) };
@@ -303,7 +397,7 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
     : (async () => {
     try {
       debugLog(`[AI Search] Fetching for ${safeLocation}...`);
-      const response = await fetchJsonWithTimeout('/api/search', {
+      const { response, attempts } = await fetchJsonWithRetry('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal,
@@ -320,7 +414,10 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
             primaryZip: resolvedLocation.primaryZip,
           }
         })
-      }, 'AI Search timed out. Please try again.');
+      }, 'AI Search timed out. Please try again.', {
+        onRetry: (attempt, reason) => debugLog(`[AI Search] Retry ${attempt} after ${reason}`),
+      });
+      searchMeta.aiRetriesUsed = Math.max(0, attempts - 1);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || 'AI Search Failed');
@@ -357,7 +454,23 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
     rrPromise = (async () => {
       try {
         debugLog(`[RR API] Fetching for ${rrLookupZip} (resolved from ${safeLocation})...`);
-        const data = await fetchFromRadioReference(rrLookupZip, rrCredentials, ALL_SERVICE_TYPES, signal);
+        let rrAttempts = 0;
+        const data = await withRetry(async (attempt) => {
+          rrAttempts = attempt + 1;
+          return await fetchFromRadioReference(rrLookupZip, rrCredentials, ALL_SERVICE_TYPES, signal);
+        }, {
+          signal,
+          // Credentials errors are permanent — don't keep hammering RR with bad auth.
+          isTransient: (err) => {
+            if (isAbortError(err)) return false;
+            const msg = ((err as { message?: string })?.message || '').toLowerCase();
+            if (/auth|password|credentials|access denied|unauthor/i.test(msg)) return false;
+            if (/zip.*not found|not found.*zip|invalid zip/i.test(msg)) return false;
+            return /timeout|timed out|network|fetch failed|socket|econn|5\d\d|gateway|temporar/i.test(msg);
+          },
+          onRetry: (attempt, reason) => debugLog(`[RR API] Retry ${attempt} after ${reason}`),
+        });
+        searchMeta.rrRetriesUsed = Math.max(0, rrAttempts - 1);
         if (data) {
           data.source = 'API';
           // Mark inner items

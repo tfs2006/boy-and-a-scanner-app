@@ -103,6 +103,10 @@ export interface SearchMeta {
   aiFallbackUsed?: boolean;
   aiFallbackFrom?: 'gemini' | 'openrouter';
   aiUsedSearchTools?: boolean;
+  /** Number of retry attempts used by AI search (0 = succeeded on first try). */
+  aiRetriesUsed?: number;
+  /** Number of retry attempts used by the RadioReference fetch. */
+  rrRetriesUsed?: number;
 }
 
 export interface SearchResponse {
