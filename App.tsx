@@ -137,6 +137,17 @@ function recordScanToday(): { streak: number; isNewDay: boolean } {
 }
 
 // Daily challenge: pick a random US state each day
+const STATE_ABBREVS: Record<string, string> = {
+  Alabama:'AL',Alaska:'AK',Arizona:'AZ',Arkansas:'AR',California:'CA',Colorado:'CO',
+  Connecticut:'CT',Delaware:'DE',Florida:'FL',Georgia:'GA',Hawaii:'HI',Idaho:'ID',
+  Illinois:'IL',Indiana:'IN',Iowa:'IA',Kansas:'KS',Kentucky:'KY',Louisiana:'LA',
+  Maine:'ME',Maryland:'MD',Massachusetts:'MA',Michigan:'MI',Minnesota:'MN',Mississippi:'MS',
+  Missouri:'MO',Montana:'MT',Nebraska:'NE',Nevada:'NV','New Hampshire':'NH','New Jersey':'NJ',
+  'New Mexico':'NM','New York':'NY','North Carolina':'NC','North Dakota':'ND',Ohio:'OH',
+  Oklahoma:'OK',Oregon:'OR',Pennsylvania:'PA','Rhode Island':'RI','South Carolina':'SC',
+  'South Dakota':'SD',Tennessee:'TN',Texas:'TX',Utah:'UT',Vermont:'VT',Virginia:'VA',
+  Washington:'WA','West Virginia':'WV',Wisconsin:'WI',Wyoming:'WY',
+};
 function getDailyChallenge(): { state: string; completed: boolean } {
   const today = new Date().toISOString().slice(0, 10);
   const stored = localStorage.getItem(DAILY_CHALLENGE_KEY);
@@ -146,7 +157,7 @@ function getDailyChallenge(): { state: string; completed: boolean } {
       if (parsed.date === today) return parsed;
     } catch { /* regenerate */ }
   }
-  const states = ['Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming'];
+  const states = Object.keys(STATE_ABBREVS);
   // Deterministic daily pick using date as seed
   const seed = today.split('-').map(Number).reduce((a, b) => a * 31 + b, 0);
   const state = states[seed % states.length];
@@ -918,7 +929,8 @@ function App() {
         saveSearchToHistory(query);
         setTimeout(updateStats, 1000);
       } else {
-        if (!isZip && !query.includes(',')) {
+        const isStateName = Boolean(STATE_ABBREVS[query.trim()]);
+        if (!isZip && !query.includes(',') && !isStateName) {
           setError(`Could not pinpoint "${query}". Try adding a State (e.g., "${query}, CA") or ZIP code.`);
         } else {
           setError('Could not extract radio data for this location.');
@@ -930,7 +942,8 @@ function App() {
       }
       const msg = e.message || "AI Search failed.";
       if (msg.includes("Unable to retrieve")) {
-        if (!isZip && !query.includes(',')) {
+          const isStateName = Boolean(STATE_ABBREVS[query.trim()]);
+          if (!isZip && !query.includes(',') && !isStateName) {
           setError(`Search failed. Try adding a State (e.g., "${query}, CA") for better accuracy.`);
           return;
         }
@@ -1625,7 +1638,8 @@ function App() {
                   <button
                     onClick={() => {
                       const challenge = getDailyChallenge();
-                      handleFavoriteClick(challenge.state);
+                       const abbrev = STATE_ABBREVS[challenge.state];
+                       handleFavoriteClick(abbrev ? `${challenge.state}, ${abbrev}` : challenge.state);
                     }}
                     disabled={dailyChallenge.completed}
                     className={`group relative flex flex-col items-center gap-2 p-4 rounded-xl border transition-all duration-200 hover:scale-[1.03] hover:shadow-lg ${
