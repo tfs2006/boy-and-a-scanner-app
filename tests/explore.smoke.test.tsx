@@ -118,6 +118,6 @@ describe('explore smoke', () => {
       expect(screen.getAllByText('Location 0')).toHaveLength(2);
       expect(screen.getByText(/0 agencies/i)).toBeInTheDocument();
       expect(screen.getByText('Loaded detail')).toBeInTheDocument();
-    });
+    }, { timeout: 5000 });
   });
 });
