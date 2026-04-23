@@ -46,12 +46,20 @@ function getOpenRouterModel(): string {
   return process.env.OPENROUTER_APP_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL;
 }
 
+function getGeminiApiKey(): string | null {
+  return process.env.GEMINI_API_KEY?.trim() || null;
+}
+
+function getOpenRouterApiKey(): string | null {
+  return process.env.OPENROUTER_API_KEY?.trim() || null;
+}
+
 function hasGeminiConfig(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY);
+  return Boolean(getGeminiApiKey());
 }
 
 function hasOpenRouterConfig(): boolean {
-  return Boolean(process.env.OPENROUTER_API_KEY);
+  return Boolean(getOpenRouterApiKey());
 }
 
 export function getActiveAppAiProvider(): AppAiProvider {
@@ -69,7 +77,7 @@ export function ensureAppAiConfig(): void {
 }
 
 async function generateWithGemini(prompt: string, timeoutMs: number, allowSearchTools: boolean): Promise<AppAiGenerationResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getGeminiApiKey();
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured.');
   }
@@ -125,20 +133,20 @@ async function generateWithGemini(prompt: string, timeoutMs: number, allowSearch
 }
 
 async function generateWithOpenRouter(prompt: string, timeoutMs: number): Promise<AppAiGenerationResult> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const apiKey = getOpenRouterApiKey();
   if (!apiKey) {
     throw new Error('OPENROUTER_API_KEY is not configured.');
   }
 
   const model = getOpenRouterModel();
   const response = await withTimeout(
-    fetch(`${process.env.OPENROUTER_BASE_URL || DEFAULT_OPENROUTER_BASE_URL}/chat/completions`, {
+    fetch(`${process.env.OPENROUTER_BASE_URL?.trim() || DEFAULT_OPENROUTER_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': process.env.OPENROUTER_SITE_URL || DEFAULT_OPENROUTER_SITE_URL,
-        'X-Title': process.env.OPENROUTER_APP_NAME || DEFAULT_OPENROUTER_APP_NAME,
+        'HTTP-Referer': process.env.OPENROUTER_SITE_URL?.trim() || DEFAULT_OPENROUTER_SITE_URL,
+        'X-Title': process.env.OPENROUTER_APP_NAME?.trim() || DEFAULT_OPENROUTER_APP_NAME,
       },
       body: JSON.stringify({
         model,
