@@ -24,6 +24,32 @@ type GenerateAppAiContentOptions = {
   allowSearchTools?: boolean;
 };
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function shouldRetryGeminiWithoutSearchTools(error: unknown): boolean {
+  const message = getErrorMessage(error).toLowerCase();
+
+  // Hard auth/config failures will not improve if we immediately retry the same
+  // model without Google Search tools enabled.
+  if (message.includes('api_key_invalid')) return false;
+  if (message.includes('permission_denied')) return false;
+  if (message.includes('unauthorized')) return false;
+  if (message.includes('invalid api key')) return false;
+  if (message.includes('gemini_api_key is not configured')) return false;
+
+  return true;
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return Promise.race([
     promise,
@@ -102,10 +128,11 @@ async function generateWithGemini(prompt: string, timeoutMs: number, allowSearch
         'AI request timed out'
       );
     } catch (error: any) {
-      const message = error?.message || JSON.stringify(error);
-      if (!message.includes('API_KEY_INVALID') && !message.includes('400') && !message.includes('403') && !message.includes('PERMISSION_DENIED')) {
+      if (!shouldRetryGeminiWithoutSearchTools(error)) {
         throw error;
       }
+
+      console.warn('Gemini search-tool request failed. Retrying without tools.', getErrorMessage(error));
       usedSearchTools = false;
       response = undefined;
     }
