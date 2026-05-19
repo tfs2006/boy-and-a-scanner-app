@@ -227,6 +227,17 @@ export async function generateAppAiContent(options: GenerateAppAiContentOptions)
         fallbackFrom: 'openrouter',
       };
     }
+
+    if (provider === 'gemini' && hasOpenRouterConfig()) {
+      console.warn('Gemini request failed. Falling back to OpenRouter for this request.', error);
+      const fallback = await generateWithOpenRouter(options.prompt, options.timeoutMs);
+      return {
+        ...fallback,
+        fallbackUsed: true,
+        fallbackFrom: 'gemini',
+      };
+    }
+
     throw error;
   }
 }

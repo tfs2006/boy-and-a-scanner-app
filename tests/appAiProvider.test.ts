@@ -10,6 +10,7 @@ describe('appAiProvider', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     process.env = { ...originalEnv };
   });
 
@@ -57,6 +58,54 @@ describe('appAiProvider', () => {
     expect(warnSpy).toHaveBeenCalledWith(
       'Gemini search-tool request failed. Retrying without tools.',
       '503 search tool unavailable'
+    );
+  });
+
+  it('falls back from Gemini to OpenRouter when Gemini fails entirely', async () => {
+    const generateContent = vi.fn().mockRejectedValue(new Error('503 gemini unavailable'));
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: '```json\n{"source":"AI","locationName":"Bagdad, KY","agencies":[],"trunkedSystems":[]}\n```',
+            },
+          },
+        ],
+      }),
+    });
+
+    vi.doMock('@google/genai', () => ({
+      GoogleGenAI: class {
+        models = { generateContent };
+      },
+    }));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    process.env.APP_AI_PROVIDER = 'gemini';
+    process.env.GEMINI_API_KEY = 'test-key';
+    process.env.OPENROUTER_API_KEY = 'openrouter-key';
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { generateAppAiContent } = await import('../api/appAiProvider');
+
+    const result = await generateAppAiContent({
+      prompt: 'Find frequencies for 40003',
+      timeoutMs: 1000,
+      allowSearchTools: true,
+    });
+
+    expect(generateContent).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(result.provider).toBe('openrouter');
+    expect(result.fallbackUsed).toBe(true);
+    expect(result.fallbackFrom).toBe('gemini');
+    expect(result.text).toContain('Bagdad, KY');
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Gemini request failed. Falling back to OpenRouter for this request.',
+      expect.any(Error)
     );
   });
 });
