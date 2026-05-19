@@ -50,6 +50,34 @@ function shouldRetryGeminiWithoutSearchTools(error: unknown): boolean {
   return true;
 }
 
+function hasParseableJsonPayload(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const candidates = [trimmed];
+  const fenced = trimmed.match(/```json\s*([\s\S]*?)(?:\s*```)?$/i);
+  if (fenced?.[1]) {
+    candidates.push(fenced[1].trim());
+  }
+
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  }
+
+  return candidates.some((candidate) => {
+    try {
+      JSON.parse(candidate);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return Promise.race([
     promise,
@@ -70,6 +98,15 @@ function getGeminiModel(): string {
 
 function getOpenRouterModel(): string {
   return process.env.OPENROUTER_APP_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL;
+}
+
+function getOpenRouterFallbackModel(): string | null {
+  const model = process.env.OPENROUTER_APP_FALLBACK_MODEL?.trim();
+  if (!model) {
+    return null;
+  }
+
+  return model === getOpenRouterModel() ? null : model;
 }
 
 function getGeminiApiKey(): string | null {
@@ -165,51 +202,80 @@ async function generateWithOpenRouter(prompt: string, timeoutMs: number): Promis
     throw new Error('OPENROUTER_API_KEY is not configured.');
   }
 
-  const model = getOpenRouterModel();
-  const response = await withTimeout(
-    fetch(`${process.env.OPENROUTER_BASE_URL?.trim() || DEFAULT_OPENROUTER_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': process.env.OPENROUTER_SITE_URL?.trim() || DEFAULT_OPENROUTER_SITE_URL,
-        'X-Title': process.env.OPENROUTER_APP_NAME?.trim() || DEFAULT_OPENROUTER_APP_NAME,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        response_format: {
-          type: 'json_object',
+  const requestModel = async (model: string) => {
+    const response = await withTimeout(
+      fetch(`${process.env.OPENROUTER_BASE_URL?.trim() || DEFAULT_OPENROUTER_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          'HTTP-Referer': process.env.OPENROUTER_SITE_URL?.trim() || DEFAULT_OPENROUTER_SITE_URL,
+          'X-Title': process.env.OPENROUTER_APP_NAME?.trim() || DEFAULT_OPENROUTER_APP_NAME,
         },
-        messages: [
-          {
-            role: 'system',
-            content: 'Return only valid JSON for the requested payload. Do not wrap the JSON in markdown fences or add prose before or after it.',
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          response_format: {
+            type: 'json_object',
           },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
+          messages: [
+            {
+              role: 'system',
+              content: 'Return only valid JSON for the requested payload. Do not wrap the JSON in markdown fences or add prose before or after it.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+        }),
       }),
-    }),
-    timeoutMs,
-    'AI request timed out'
-  );
+      timeoutMs,
+      'AI request timed out'
+    );
 
-  const payload: any = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload?.error?.message || payload?.message || `OpenRouter request failed (${response.status})`);
-  }
+    const payload: any = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload?.error?.message || payload?.message || `OpenRouter request failed (${response.status})`);
+    }
 
-  return {
-    text: payload?.choices?.[0]?.message?.content || '{}',
-    groundingChunks: [],
-    provider: 'openrouter',
-    model,
-    usedSearchTools: false,
-    fallbackUsed: false,
+    const text = payload?.choices?.[0]?.message?.content || '{}';
+    if (!hasParseableJsonPayload(text)) {
+      throw new Error(`OpenRouter model ${model} returned malformed JSON payload.`);
+    }
+
+    return text;
   };
+
+  const primaryModel = getOpenRouterModel();
+  const fallbackModel = getOpenRouterFallbackModel();
+
+  try {
+    const text = await requestModel(primaryModel);
+    return {
+      text,
+      groundingChunks: [],
+      provider: 'openrouter',
+      model: primaryModel,
+      usedSearchTools: false,
+      fallbackUsed: false,
+    };
+  } catch (error) {
+    if (!fallbackModel) {
+      throw error;
+    }
+
+    console.warn(`OpenRouter model ${primaryModel} failed. Retrying with fallback model ${fallbackModel}.`, error);
+    const text = await requestModel(fallbackModel);
+    return {
+      text,
+      groundingChunks: [],
+      provider: 'openrouter',
+      model: fallbackModel,
+      usedSearchTools: false,
+      fallbackUsed: true,
+    };
+  }
 }
 
 export async function generateAppAiContent(options: GenerateAppAiContentOptions): Promise<AppAiGenerationResult> {

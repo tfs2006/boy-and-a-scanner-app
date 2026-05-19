@@ -156,7 +156,8 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
    ```env
    APP_AI_PROVIDER=openrouter
    OPENROUTER_API_KEY=your_openrouter_api_key
-   OPENROUTER_APP_MODEL=google/gemini-3-flash-preview
+   OPENROUTER_APP_MODEL=deepseek/deepseek-v4-flash:free
+   OPENROUTER_APP_FALLBACK_MODEL=deepseek/deepseek-v4-flash
    GEMINI_API_KEY=your_gemini_api_key
    VITE_SUPABASE_URL=https://your-project.supabase.co
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -164,6 +165,7 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
 
    Notes:
    - Set `APP_AI_PROVIDER=gemini` if you want the app to use Gemini directly.
+   - When `APP_AI_PROVIDER=openrouter`, you can set `OPENROUTER_APP_FALLBACK_MODEL` so the app retries a second OpenRouter model if the primary model errors or returns malformed JSON.
    - If `APP_AI_PROVIDER=openrouter` and `GEMINI_API_KEY` is also present, the app can fall back to Gemini for individual failed OpenRouter requests.
    - If you only want one provider locally, you can omit the other key.
 
@@ -200,6 +202,7 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
 | `GEMINI_APP_MODEL` | Server-side only | Optional Gemini model override for the app |
 | `OPENROUTER_API_KEY` | Server-side only | OpenRouter API key for the app |
 | `OPENROUTER_APP_MODEL` | Server-side only | OpenRouter model id for the app, e.g. `google/gemini-3-flash-preview` |
+| `OPENROUTER_APP_FALLBACK_MODEL` | Server-side only | Optional backup OpenRouter model used if the primary model fails or returns invalid JSON |
 | `OPENROUTER_SITE_URL` | Server-side only | Optional OpenRouter referer header for the app |
 | `OPENROUTER_APP_NAME` | Server-side only | Optional OpenRouter app title header |
 | `VITE_SUPABASE_URL` | Browser | Supabase project URL |
