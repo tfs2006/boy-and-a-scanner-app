@@ -177,11 +177,14 @@ async function generateWithOpenRouter(prompt: string, timeoutMs: number): Promis
       },
       body: JSON.stringify({
         model,
-        temperature: 0.1,
+        temperature: 0,
+        response_format: {
+          type: 'json_object',
+        },
         messages: [
           {
             role: 'system',
-            content: 'Return only the requested JSON payload inside a json code block. Do not add prose before or after the code block.',
+            content: 'Return only valid JSON for the requested payload. Do not wrap the JSON in markdown fences or add prose before or after it.',
           },
           {
             role: 'user',

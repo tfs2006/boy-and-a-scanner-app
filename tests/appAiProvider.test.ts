@@ -108,4 +108,47 @@ describe('appAiProvider', () => {
       expect.any(Error)
     );
   });
+
+  it('requests structured JSON output from OpenRouter models', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: '{"source":"AI","locationName":"Bagdad, KY","agencies":[],"trunkedSystems":[]}',
+            },
+          },
+        ],
+      }),
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    process.env.APP_AI_PROVIDER = 'openrouter';
+    process.env.OPENROUTER_API_KEY = 'openrouter-key';
+    process.env.OPENROUTER_APP_MODEL = 'deepseek/deepseek-v4-flash';
+    delete process.env.GEMINI_API_KEY;
+
+    const { generateAppAiContent } = await import('../api/appAiProvider');
+
+    const result = await generateAppAiContent({
+      prompt: 'Find frequencies for 40003',
+      timeoutMs: 1000,
+      allowSearchTools: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, requestInit] = fetchMock.mock.calls[0];
+    const payload = JSON.parse(String(requestInit?.body));
+    expect(payload).toEqual(expect.objectContaining({
+      model: 'deepseek/deepseek-v4-flash',
+      temperature: 0,
+      response_format: { type: 'json_object' },
+    }));
+    expect(payload.messages[0].content).toContain('Return only valid JSON');
+    expect(result.provider).toBe('openrouter');
+    expect(result.model).toBe('deepseek/deepseek-v4-flash');
+    expect(result.text).toContain('Bagdad, KY');
+  });
 });
