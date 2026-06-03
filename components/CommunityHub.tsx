@@ -717,7 +717,7 @@ const TIP_SECTIONS: TipSection[] = [
     title: 'Tips for Better Results',
     items: [
       'For rural areas, search by county name (e.g., "Jackson County, GA") for broader coverage.',
-      'Connect a RadioReference Premium account in Settings to pull verified database frequencies.',
+      'Connect a RadioReference Premium account in Settings to run live verified lookups for your current search.',
       'If you\'re on a road trip, use TRIP mode to pre-program frequencies for each zone of your route.',
       'Trunked systems often have many talkgroups — filter to just Police and Fire to reduce clutter.',
       'Cross-Reference Verification (the green shield) means the data was confirmed by multiple sources.',

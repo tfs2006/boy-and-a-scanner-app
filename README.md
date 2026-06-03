@@ -12,7 +12,7 @@
 
 ## Overview
 
-Boy & A Scanner is a full-stack web application that combines AI-assisted search, RadioReference lookups, and Supabase-backed caching to deliver scanner frequency intelligence for US locations. Users can search by ZIP, city, county, or GPS coordinates, optionally connect a RadioReference account for authoritative refreshes, and export the resulting Police, Fire, EMS, and trunked system data for scanner programming.
+Boy & A Scanner is a full-stack web application that combines AI-assisted search, live RadioReference lookups, and Supabase-backed caching to deliver scanner frequency intelligence for US locations. Users can search by ZIP, city, county, or GPS coordinates, optionally connect a RadioReference account for live per-search authoritative lookups, and export the resulting Police, Fire, EMS, and trunked system data for scanner programming.
 
 ---
 
@@ -28,10 +28,10 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
 | **COMMUNITY** | ScannerSphere hub with forum posts, events calendar, and tutorials |
 
 ### Hybrid Data Sources
-- **RadioReference SOAP API** — Authoritative verified data for ZIP code lookups (requires RR Premium account)
+- **RadioReference SOAP API** — Live authoritative ZIP code lookups for the current user's search session (requires RR Premium account)
 - **App AI provider layer** — The app supports direct Gemini or OpenRouter for live on-demand AI search, and can fall back from OpenRouter to Gemini when configured
 - **Deterministic Location Resolver** — Normalizes ZIP, city/state, and county/state searches into the same geographic identity before search
-- **Cloud Cache** — Supabase-backed cache keyed by canonical geography with equivalent legacy aliases so ZIP, city, county, and common `St` / `Saint` variants can reuse the same result set
+- **Cloud Cache** — Supabase-backed shared AI-safe cache keyed by canonical geography with equivalent legacy aliases so ZIP, city, county, and common `St` / `Saint` variants can reuse the same result set
 
 ### Export Ecosystem
 | Export | Description |
@@ -55,7 +55,7 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
 - **Dark / Light theme toggle**
 - **Advanced Search** — Filter by State, City, County, or ZIP with structured form fields
 - **Guided Scope Feedback** — The app shows how a query was interpreted and offers one-tap refinement chips for ZIP, city, or county scope when useful
-- **RR Refresh Controls** — RR-backed searches can automatically upgrade AI-only cache entries, with a manual `Refresh RR` override when an immediate authoritative recheck is needed
+- **RR Live Check Controls** — Linked RR accounts can add live RR data to a search, and a manual `Check RR Live` action bypasses shared cache for a fresh lookup
 - **AI Provider Visibility** — Search results show whether the live request used OpenRouter or direct Gemini, and whether Gemini fallback was used for that request
 - **Mobile hamburger menu** — Full nav + account actions accessible on all screen sizes
 
@@ -222,7 +222,7 @@ Tables are defined in `supabase/crowdsource_schema.sql`:
 
 | Table | Purpose |
 |-------|---------|
-| `search_cache` | Cached AI+RR results keyed by canonical `v7_loc_*` geography keys with legacy `v6_loc_*` aliases still read for compatibility |
+| `search_cache` | Shared AI-safe cached results keyed by canonical `v7_loc_*` geography keys with legacy `v6_loc_*` aliases still read for compatibility |
 | `favorites` | User-saved locations (RLS-protected by `user_id`) |
 | `profiles` | Display names, scanner model, bio, location, and avatar per user |
 | `frequency_reports` | Crowdsourced "Heard It" confirmations and user frequency submissions |
@@ -251,8 +251,8 @@ The app deploys to [Vercel](https://vercel.com). The `api/` folder is automatica
 
 The `precacher/` folder contains a standalone Node.js script that does two jobs:
 
-- **Cache warmer** — refreshes high-value ZIP searches into Supabase so users get faster cached responses
-- **SEO publisher** — renders ZIP landing pages from cached entries and pushes them to the SEO repo
+- **Cache warmer** — refreshes high-value ZIP searches into the shared AI-safe Supabase cache so users get faster cached responses
+- **SEO publisher** — renders ZIP landing pages from AI-safe cached entries and pushes them to the SEO repo
 
 Current cache-warming strategy:
 
@@ -260,7 +260,7 @@ Current cache-warming strategy:
 - **Warm ZIPs** — seed coverage ZIPs from `precacher/zipcodes.json`
 - **Different refresh windows** — hot ZIPs refresh more aggressively than warm ZIPs
 - **Seed expansion over time** — hot ZIPs can be appended back into `precacher/zipcodes.json` so weekly runs steadily broaden coverage from real demand
-- **RR shared warming disabled** — RadioReference data is not warmed into shared cache; RR access remains live and per-user inside the main app
+- **Shared AI cache only** — the worker writes AI-safe results only; live RR data is excluded from the shared cache
 - **ZIP-only SEO pages** — the SEO publisher generates pages only from ZIP cache entries, regardless of whether they were reached through canonical v7 keys or legacy ZIP aliases
 - **RR rows excluded from SEO** — SEO pages skip RR-backed cache rows and rebuild `/frequencies` from scratch so old RR-derived ZIP pages are removed on the next publish
 - **Independent execution** — cache warming and SEO publishing run on separate timers so one can succeed without the other
@@ -308,29 +308,14 @@ Manual modes:
 ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --cache-only"
 ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --seo-only"
 ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --test"
-ssh oracle "cd ~/boy-and-a-scanner-app/precacher && node precacher.mjs --rr-upgrade-only"
 ```
 
-The precacher needs its own `.env` containing an AI provider key plus `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
+The precacher needs its own `.env` containing an AI provider key, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and the GitHub SEO publish settings.
 
 AI provider options for the precacher:
 
 - **Gemini** — set `AI_PROVIDER=gemini` and `GEMINI_API_KEY=...`
 - **OpenRouter / Kimi** — set `AI_PROVIDER=openrouter`, `OPENROUTER_API_KEY=...`, and `AI_MODEL=moonshotai/kimi-k2` (or another supported Kimi model id)
-
-Optional RR-assisted weekly refresh for hot ZIPs:
-
-- Set `RR_REFRESH_ENABLED=1`
-- Set `APP_BASE_URL=https://app.boyandascanner.com`
-- Set `RR_USERNAME` / `RR_PASSWORD` on the Oracle VM only
-- Leave `RR_REFRESH_HOT_ONLY=1` to keep the RR pass bounded to hot-demand ZIPs
-
-Nightly RR upgrade queue for AI-only ZIP cache rows:
-
-- Leave `RR_UPGRADE_ENABLED=1`
-- Set `RR_UPGRADE_BATCH_SIZE=15` to process 15 rows per night
-- Set `RR_UPGRADE_ON_CALENDAR` to the nightly UTC schedule you want
-- The worker keeps its place in `precacher/.rr-upgrade-state.json` on the Oracle VM so it moves forward through the AI-only ZIP backlog instead of repeating the same entries nightly
 
 Important precacher env vars:
 
@@ -344,7 +329,6 @@ Important precacher env vars:
 | `OPENROUTER_APP_NAME` | App title sent to OpenRouter in the `X-Title` header |
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_ANON_KEY` | Supabase anon key for cache read/write |
-| `APP_BASE_URL` | Deployed app URL used for bounded `/api/rrdb` refreshes |
 | `DELAY_SECONDS` | Delay between Gemini requests |
 | `MAX_AGE_HOURS` | Legacy fallback if `HOT_MAX_AGE_HOURS` is not set |
 | `HOT_MAX_AGE_HOURS` | Refresh window for high-value ZIPs |
@@ -355,12 +339,6 @@ Important precacher env vars:
 | `MAX_REPORT_ZIPS` | Max ZIPs pulled from community activity |
 | `EXPAND_SEED_ZIPS` | Persist newly hot ZIPs back into the seed file |
 | `MAX_SEED_APPEND_PER_RUN` | Cap how many newly hot ZIPs can be appended into the seed file per run |
-| `RR_REFRESH_ENABLED` | Enable bounded RR refreshes during weekly cache runs |
-| `RR_REFRESH_HOT_ONLY` | Limit RR refreshes to hot ZIPs only |
-| `RR_USERNAME` / `RR_PASSWORD` | RR credentials used only by the Oracle worker |
-| `RR_UPGRADE_ENABLED` | Enable the separate nightly AI-to-RR cache upgrade pass |
-| `RR_UPGRADE_BATCH_SIZE` | Number of AI-only ZIP cache rows to upgrade per nightly run |
-| `RR_UPGRADE_ON_CALENDAR` | systemd `OnCalendar` schedule for the nightly RR upgrade timer |
 | `CACHE_ON_CALENDAR` | systemd `OnCalendar` schedule for weekly cache runs |
 | `SEO_ON_CALENDAR` | systemd `OnCalendar` schedule for weekly SEO runs |
 | `GITHUB_TOKEN` | GitHub PAT used for SEO repo publishing |
@@ -370,9 +348,8 @@ Important precacher env vars:
 Operational notes:
 
 - Cache runs now report ZIP plan composition and hot/warm cache results directly in the logs
-- Nightly RR upgrade runs report how many AI-only ZIP rows were upgraded and where the cursor will resume next night
 - SEO runs report how many ZIP entries were used as input and how many pages were published
-- The legacy combined `precacher.timer` is replaced by `precacher-cache.timer`, `precacher-seo.timer`, and `precacher-rr-upgrade.timer`
+- The legacy combined `precacher.timer` is replaced by `precacher-cache.timer` and `precacher-seo.timer`
 - Explore map queries now request coordinate-bearing cache rows only, so non-mappable cache entries do not crowd out visible markers
 - March 31, 2026 one-time repair: all `v6_loc_*` cache rows were backfilled to remove null-coordinate records (`v6` null coords reduced to 0)
 
@@ -394,6 +371,12 @@ Operational notes:
 
 ## Changelog
 
+### June 3, 2026 — RR Live-Only Compliance + Frequency Directory Routing
+- Switched RR usage to live-only per-user lookups; RR-backed results are no longer written into shared cache or SEO output
+- Disabled Oracle RR warming and RR upgrade jobs; the precacher now handles AI-safe cache warming and SEO publishing only
+- Updated app and README wording to describe live RR checks instead of shared RR refreshes
+- Normalized the separate `tfs2006/boy-and-a-scanner` Vercel routing so both `/frequencies` and `/frequencies/` resolve correctly to the public SEO directory
+
 ### March 31, 2026 — Explore Map Stability + Cache Coordinate Safeguards
 - Fixed RR merge behavior so cache writes preserve existing AI coordinates when RR payloads omit `coords`
 - Updated Explore map cache query to pull coordinate-bearing rows first for better marker coverage in the first page
@@ -402,7 +385,7 @@ Operational notes:
 
 ### March 26, 2026 — Frequency Directory & Domain Migration
 - Migrated `boyandascanner.com` hosting from GitHub Pages to Vercel (`boy-and-a-scanner` Vercel project connected to `tfs2006/boy-and-a-scanner`)
-- Added `vercel.json` to `tfs2006/boy-and-a-scanner` with proxy rewrite: `/frequencies/:path*` → `scanner-seo-pages.vercel.app/frequencies/:path*`
+- Added `vercel.json` to `tfs2006/boy-and-a-scanner` with proxy rules for `/frequencies` and `/frequencies/:path*` to the `scanner-seo-pages` directory deployment
 - Frequency directory now lives at `boyandascanner.com/frequencies` (was `scanner-seo-pages.vercel.app/frequencies`)
 - Updated all in-app cross-links (nav bar, mobile menu, "Frequency Page" result button) to point to `boyandascanner.com/frequencies`
 - All three repos (`boy-and-a-scanner`, `boy-and-a-scanner-app`, `scanner-seo-pages`) connected to Vercel via GitHub App — safe to make private

@@ -152,10 +152,10 @@ describe('app export status notices', () => {
     fireEvent.click(screen.getByText('trigger search'));
 
     await waitFor(() => {
-      expect(screen.getByText('Refreshed with RadioReference')).toBeInTheDocument();
+      expect(screen.getByText('Checked Live with RadioReference')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByText('Refresh RR'));
+    fireEvent.click(screen.getByText('Check RR Live'));
 
     await waitFor(() => {
       expect(searchFrequencies).toHaveBeenLastCalledWith('12345', ['Police', 'Fire', 'EMS'], { username: 'demo', password: 'secret' }, expect.any(AbortSignal), { bypassCache: true });

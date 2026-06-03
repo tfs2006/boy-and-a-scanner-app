@@ -74,7 +74,7 @@ export const Auth: React.FC = () => {
                     <Shield className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
                     <div>
                         <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wide">AI Data Verification</h3>
-                        <p className="text-[11px] text-slate-400 mt-0.5">We cross-reference RadioReference data to ensure you don't program dead channels.</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Link RadioReference in Settings to live-check verified channels before you export or program.</p>
                     </div>
                 </div>
 

@@ -816,9 +816,9 @@ function App() {
     setRrWarning(null);
     const isZip = /^\d{5}$/.test(query.trim());
     if (options?.bypassCache && rrCredentials) {
-      setSearchStep('Bypassing cache and rechecking RadioReference...');
+      setSearchStep('Bypassing shared cache and running a live RadioReference check...');
     } else if (isZip && rrCredentials) {
-      setSearchStep('Connecting to RadioReference Database...');
+      setSearchStep('Running a live RadioReference lookup...');
     } else {
       setSearchStep(`Analyzing Location & Scanning for: ${serviceTypes.slice(0, 3).join(', ')}...`);
     }
@@ -887,16 +887,16 @@ function App() {
         if (options?.bypassCache && rrCredentials) {
           pushStatusNotice({
             tone: response.data.source === 'API' ? 'success' : 'info',
-            message: response.data.source === 'API' ? 'Live RadioReference recheck complete.' : 'Live recheck complete.',
+            message: response.data.source === 'API' ? 'Live RadioReference check complete.' : 'Live recheck complete.',
             detail: response.data.source === 'API'
-              ? 'Cache was bypassed for this search so you are seeing a fresh RadioReference lookup.'
-              : 'Cache was bypassed for this search. RadioReference did not return authoritative data, so the best live result was shown.',
+              ? 'Shared cache was bypassed for this search, so you are seeing a fresh live RadioReference lookup.'
+              : 'Shared cache was bypassed for this search. RadioReference did not return authoritative data, so the best live result was shown.',
           });
         } else if (response.searchMeta?.refreshedWithRadioReference) {
           pushStatusNotice({
             tone: 'success',
-            message: 'Cached AI results were upgraded with live RadioReference data.',
-            detail: 'This result was refreshed against the RadioReference database before being shown.',
+            message: 'Live RadioReference data was added to this result.',
+            detail: 'The app reused cached AI context, then checked RadioReference live for this search only.',
           });
         }
         saveSearchToHistory(query);
@@ -980,7 +980,7 @@ function App() {
           {meta?.refreshedWithRadioReference && (
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border bg-cyan-900/30 border-cyan-500/50 text-cyan-300">
               <ShieldCheck className="w-4 h-4" />
-              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Refreshed with RadioReference</span>
+              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">Checked Live with RadioReference</span>
             </div>
           )}
           {meta?.bypassedCache && (
@@ -1454,7 +1454,7 @@ function App() {
             </div>
 
             <p className="text-sm text-slate-400 mb-4 leading-relaxed">
-              Connect your <strong className="text-white">RadioReference Premium</strong> account to pull <em>verified</em> frequency data directly from the RR database instead of relying on AI search.
+              Connect your <strong className="text-white">RadioReference Premium</strong> account to run <em>live verified</em> lookups directly against the RR database for your current search instead of relying only on AI search.
             </p>
             <p className="text-xs text-slate-500 -mt-2">
               Credentials are kept for this browser session only and cleared when you close the tab.
@@ -1502,7 +1502,7 @@ function App() {
             <div className="mt-4 p-3 bg-slate-950 rounded border border-slate-800">
               <p className="text-[11px] text-slate-500 font-mono-tech leading-relaxed">
                 <span className="text-amber-400">NOTE:</span> A <a href="https://www.radioreference.com/apps/subscription/" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">RadioReference Premium subscription</a> is required.
-                Your app key is securely stored on the server. ZIP code searches use the RR database live for your active session; RR-backed results are not shared into the app cache.
+                Your app key is securely stored on the server. ZIP code searches use the RR database live for your active session only; RR-backed results are not written into shared cache or public directory pages.
               </p>
             </div>
 
@@ -1895,7 +1895,7 @@ function App() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <h3 className="text-lg sm:text-xl font-bold text-white font-mono-tech tracking-tight truncate">{result.locationName}</h3>
-                        <p className="text-xs text-slate-400 font-mono-tech">Scan complete · {result.source === 'API' ? 'RadioReference Verified' : result.source === 'Cache' ? 'From Cache' : 'AI Results'}</p>
+                        <p className="text-xs text-slate-400 font-mono-tech">Scan complete · {result.source === 'API' ? 'Live RadioReference Result' : result.source === 'Cache' ? 'From Cache' : 'AI Results'}</p>
                       </div>
                     </div>
 
@@ -1989,10 +1989,10 @@ function App() {
                           onClick={() => runSearch(searchQuery, { bypassCache: true })}
                           disabled={loading}
                           className="inline-flex items-center gap-2 px-4 sm:px-6 py-2 sm:py-2.5 rounded-full border bg-slate-900/60 border-cyan-500/50 text-cyan-300 hover:bg-cyan-900/40 hover:text-white transition-all shadow-lg shadow-cyan-900/20 hover:scale-105 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:scale-100"
-                          title="Bypass cache and run a fresh RadioReference recheck"
+                          title="Bypass shared cache and run a live RadioReference check for this search"
                         >
                           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <RotateCw className="w-5 h-5" />}
-                          <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Refresh RR</span>
+                          <span className="text-sm font-mono-tech font-bold uppercase tracking-wider">Check RR Live</span>
                         </button>
                       </>
                     )}
