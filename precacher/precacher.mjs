@@ -9,7 +9,7 @@
  * Usage:
  *   node precacher.mjs            # Full run (both phases)
  *   node precacher.mjs --test     # Test mode (3 ZIPs, SEO skipped)
- *   node precacher.mjs --rr-upgrade-only # RR-upgrade a nightly batch of AI-only ZIP cache rows
+ *   node precacher.mjs --rr-upgrade-only # Disabled for RR terms compliance; logs and exits
  *   node precacher.mjs --seo-only # Skip Phase 1, run SEO generation only
  */
 
@@ -47,9 +47,11 @@ const MAX_SEED_APPEND_PER_RUN = parseInt(process.env.MAX_SEED_APPEND_PER_RUN) ||
 const APP_BASE_URL = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
 const RR_USERNAME = process.env.RR_USERNAME;
 const RR_PASSWORD = process.env.RR_PASSWORD;
-const RR_REFRESH_ENABLED = process.env.RR_REFRESH_ENABLED === '1';
+// RR-backed shared cache warming is intentionally disabled. RR data must be
+// fetched only on behalf of the current end user inside the main app.
+const RR_REFRESH_ENABLED = false;
 const RR_REFRESH_HOT_ONLY = process.env.RR_REFRESH_HOT_ONLY !== '0';
-const RR_UPGRADE_ENABLED = process.env.RR_UPGRADE_ENABLED !== '0';
+const RR_UPGRADE_ENABLED = false;
 const RR_UPGRADE_BATCH_SIZE = parseInt(process.env.RR_UPGRADE_BATCH_SIZE) || 15;
 const RR_UPGRADE_STATE_FILE = join(__dirname, '.rr-upgrade-state.json');
 const SERVICE_TYPES = [
@@ -569,7 +571,7 @@ async function fetchFromAi(zip) {
 
 async function runNightlyRrUpgradePass() {
     if (!RR_UPGRADE_ENABLED) {
-        console.log('RR nightly upgrade pass is disabled by RR_UPGRADE_ENABLED=0.');
+        console.log('RR nightly upgrade pass is disabled for RR terms compliance.');
         return;
     }
 
@@ -884,7 +886,12 @@ async function fetchAllCachedEntries() {
         }
         if (!data || data.length === 0) break;
 
-        allRows = allRows.concat(data.filter(row => !!extractZipFromSearchKey(row.search_key)));
+        allRows = allRows.concat(
+            data.filter((row) => {
+                const zip = extractZipFromSearchKey(row.search_key);
+                return Boolean(zip) && !isApiResult(row.result_data);
+            })
+        );
         if (data.length < PAGE_SIZE) break;
         from += PAGE_SIZE;
     }
@@ -1156,8 +1163,8 @@ function renderSeoPage(zip, entry) {
   </div>
 
   <footer>
-    <p>Data sourced from RadioReference via AI grounding. For best accuracy, use the
-    <a href="${SEO_SITE_URL}">Boy &amp; A Scanner app</a> with a RadioReference premium account.</p>
+    <p>Data sourced from Boy &amp; A Scanner AI search and public web grounding. For authoritative RadioReference data, use the
+    <a href="${SEO_SITE_URL}">Boy &amp; A Scanner app</a> with your own RadioReference premium account.</p>
     <p style="margin-top:0.5rem;">© ${new Date().getFullYear()} Boy &amp; A Scanner</p>
   </footer>
 </body>
@@ -1271,6 +1278,7 @@ async function pushSeoPages(entries) {
 
     // Build /frequencies/ directory
     const freqDir = join(SEO_BUILD_DIR, 'frequencies');
+    if (existsSync(freqDir)) rmSync(freqDir, { recursive: true, force: true });
     mkdirSync(freqDir, { recursive: true });
 
     // Write index page

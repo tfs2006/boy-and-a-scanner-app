@@ -175,6 +175,7 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
    ```
 
    > RadioReference username/password are entered by the user in-app and stored in `sessionStorage` only — never persisted server-side.
+   > RR-backed results are used only for that user's live lookup and are not written into the shared cache or SEO output.
 
 3. **Start the dev server with API routes**
    ```bash
@@ -209,7 +210,7 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
 | `VITE_SUPABASE_ANON_KEY` | Browser | Supabase public anon key |
 | `RR_APP_KEY` | Server-side only | RadioReference app key |
 
-The app can now run through direct Gemini or OpenRouter, while the Oracle precacher keeps its own separate environment and provider settings.
+The app can now run through direct Gemini or OpenRouter, while the Oracle precacher keeps its own separate environment and provider settings for AI/SEO work only.
 
 In production, the app also threads provider metadata back to the client so the UI can show which provider handled the request.
 
@@ -259,9 +260,9 @@ Current cache-warming strategy:
 - **Warm ZIPs** — seed coverage ZIPs from `precacher/zipcodes.json`
 - **Different refresh windows** — hot ZIPs refresh more aggressively than warm ZIPs
 - **Seed expansion over time** — hot ZIPs can be appended back into `precacher/zipcodes.json` so weekly runs steadily broaden coverage from real demand
-- **Optional RR assist for hot ZIPs** — bounded weekly refreshes can call the app's `/api/rrdb` endpoint for high-value ZIPs only when RR credentials are configured on the Oracle VM
-- **Nightly RR upgrade queue** — a separate nightly pass can upgrade a small fixed batch of ZIP cache rows that are still AI-only, so authoritative RR data gradually replaces older AI-only entries
+- **RR shared warming disabled** — RadioReference data is not warmed into shared cache; RR access remains live and per-user inside the main app
 - **ZIP-only SEO pages** — the SEO publisher generates pages only from ZIP cache entries, regardless of whether they were reached through canonical v7 keys or legacy ZIP aliases
+- **RR rows excluded from SEO** — SEO pages skip RR-backed cache rows and rebuild `/frequencies` from scratch so old RR-derived ZIP pages are removed on the next publish
 - **Independent execution** — cache warming and SEO publishing run on separate timers so one can succeed without the other
 - **No destructive cache sweep** — the worker only upserts refreshed keys; it does not mass-delete cache rows
 - **Coordinate preservation safety** — when RR returns data without coordinates, merge logic now keeps existing AI coordinates so Explore markers are not dropped
@@ -274,7 +275,6 @@ Search behavior notes:
 
 - **Script:** `precacher/precacher.mjs`
 - **Schedule:** Cache timer Monday at 8:00 AM UTC, SEO timer Monday at 8:30 AM UTC by default (configurable via `CACHE_ON_CALENDAR` / `SEO_ON_CALENDAR` in `precacher/.env`)
-- **Nightly RR upgrade:** `precacher-rr-upgrade.timer` runs nightly by default and upgrades `RR_UPGRADE_BATCH_SIZE` AI-only ZIP cache rows per run using your Oracle-side RR credentials
 - **ZIP list:** `precacher/zipcodes.json`
 
 To deploy/update the precacher:

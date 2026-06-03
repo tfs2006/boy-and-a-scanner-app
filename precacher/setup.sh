@@ -46,12 +46,6 @@ Required values:
   SUPABASE_URL=...
   SUPABASE_ANON_KEY=...
   AI_MODEL=...                  optional custom model id
-  APP_BASE_URL=https://app.boyandascanner.com
-  RR_REFRESH_ENABLED=1          optional, hot ZIPs only
-  RR_USERNAME=...
-  RR_PASSWORD=...
-  RR_UPGRADE_ENABLED=1          optional, nightly AI->RR upgrades
-  RR_UPGRADE_BATCH_SIZE=15
 
 Optional SEO publishing values:
   GITHUB_TOKEN=...
@@ -72,7 +66,6 @@ set +a
 AI_PROVIDER="${AI_PROVIDER:-gemini}"
 CACHE_ON_CALENDAR="${CACHE_ON_CALENDAR:-Mon *-*-* 08:00:00}"
 SEO_ON_CALENDAR="${SEO_ON_CALENDAR:-Mon *-*-* 08:30:00}"
-RR_UPGRADE_ON_CALENDAR="${RR_UPGRADE_ON_CALENDAR:-*-*-* 03:15:00}"
 
 case "$AI_PROVIDER" in
   openrouter)
@@ -107,6 +100,7 @@ if [[ -z "${SUPABASE_URL:-}" || -z "${SUPABASE_ANON_KEY:-}" ]]; then
 fi
 
 echo "> .env found with required credentials"
+echo "> Shared RadioReference cache warming is disabled; RR access stays live and per-user inside the app"
 
 if [[ -z "${GITHUB_TOKEN:-}" || "${GITHUB_TOKEN:-}" == "your_github_token_here" ]]; then
   cat <<MSG
@@ -162,26 +156,6 @@ TimeoutStartSec=7200
 WantedBy=multi-user.target
 EOF
 
-sudo tee /etc/systemd/system/${SERVICE_BASE}-rr-upgrade.service > /dev/null <<EOF
-[Unit]
-Description=Boy and a Scanner RR Cache Upgrade Pass
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/node ${INSTALL_DIR}/precacher.mjs --rr-upgrade-only
-EnvironmentFile=${INSTALL_DIR}/.env
-User=$(whoami)
-StandardOutput=journal
-StandardError=journal
-TimeoutStartSec=7200
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 echo "> Creating systemd timers..."
 
 sudo tee /etc/systemd/system/${SERVICE_BASE}-cache.timer > /dev/null <<EOF
@@ -210,25 +184,11 @@ RandomizedDelaySec=600
 WantedBy=timers.target
 EOF
 
-sudo tee /etc/systemd/system/${SERVICE_BASE}-rr-upgrade.timer > /dev/null <<EOF
-[Unit]
-Description=Run Boy and a Scanner RR cache upgrade nightly
-
-[Timer]
-OnCalendar=${RR_UPGRADE_ON_CALENDAR}
-Persistent=true
-RandomizedDelaySec=600
-
-[Install]
-WantedBy=timers.target
-EOF
-
 echo "> Enabling systemd timers..."
 sudo systemctl daemon-reload
-sudo systemctl disable --now ${SERVICE_BASE}.timer 2>/dev/null || true
+sudo systemctl disable --now ${SERVICE_BASE}.timer ${SERVICE_BASE}-rr-upgrade.timer ${SERVICE_BASE}-rr-upgrade.service 2>/dev/null || true
 sudo systemctl enable ${SERVICE_BASE}-cache.timer
 sudo systemctl enable ${SERVICE_BASE}-seo.timer
-sudo systemctl enable ${SERVICE_BASE}-rr-upgrade.timer
 
 cat <<MSG
 
@@ -238,17 +198,14 @@ SETUP COMPLETE
 Commands:
   Start cache timer:   sudo systemctl start precacher-cache.timer
   Start SEO timer:     sudo systemctl start precacher-seo.timer
-  Start RR timer:      sudo systemctl start precacher-rr-upgrade.timer
   Run once manually:   node precacher.mjs --test
   Run cache only:      node precacher.mjs --cache-only
-  Run RR upgrade:      node precacher.mjs --rr-upgrade-only
   Run full manually:   node precacher.mjs
   SEO only:            node precacher.mjs --seo-only
-  Check timers:        systemctl status precacher-cache.timer precacher-seo.timer precacher-rr-upgrade.timer
+  Check timers:        systemctl status precacher-cache.timer precacher-seo.timer
   View cache logs:     journalctl -u precacher-cache.service -f
-  View RR logs:        journalctl -u precacher-rr-upgrade.service -f
   View SEO logs:       journalctl -u precacher-seo.service -f
-  Stop timers:         sudo systemctl stop precacher-cache.timer precacher-seo.timer precacher-rr-upgrade.timer
+  Stop timers:         sudo systemctl stop precacher-cache.timer precacher-seo.timer
 =======================================================
 
 MSG

@@ -152,12 +152,13 @@ async function getFromCache(key: string): Promise<any | null> {
   }
 }
 
-async function getFromCacheCandidates(keys: string[]) {
+async function getFromCacheCandidates(keys: string[], options: { allowAuthoritative?: boolean } = {}) {
+  const { allowAuthoritative = true } = options;
   for (const key of keys) {
     const cached = await getFromCache(key);
-    if (cached) {
-      return { ...cached, cacheKey: key };
-    }
+    if (!cached) continue;
+    if (!allowAuthoritative && cached.isAuthoritative) continue;
+    return { ...cached, cacheKey: key };
   }
   return null;
 }
@@ -173,6 +174,17 @@ async function saveToCache(key: string, resultData: any, groundingChunks: any) {
   } catch (e) {
     console.warn("Cache save error:", e);
   }
+}
+
+function buildSharedCacheRecord(result: ScanResult | null): ScanResult | null {
+  if (!result || isAuthoritativeCacheRecord(result)) return null;
+
+  const cacheRecord = JSON.parse(JSON.stringify(result)) as ScanResult;
+  if (cacheRecord.source === 'Cache') {
+    cacheRecord.source = 'AI';
+  }
+
+  return cacheRecord;
 }
 
 export async function getDatabaseStats(): Promise<number> {
@@ -346,33 +358,16 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   const rrLookupZip = /^\d{5}$/.test(safeLocation) ? safeLocation : resolvedLocation.primaryZip;
   const canFetchAuthoritativeData = Boolean(rrCredentials && rrLookupZip);
 
-  const cached = options.bypassCache ? null : await getFromCacheCandidates(cacheKeys);
+  const cached = options.bypassCache ? null : await getFromCacheCandidates(cacheKeys, { allowAuthoritative: false });
   if (cached) {
-    const authoritativeCacheAgeMs = cached.updatedAt ? Date.now() - Date.parse(cached.updatedAt) : null;
-    const shouldRefreshStaleAuthoritativeCache = Boolean(
-      canFetchAuthoritativeData &&
-      cached.isAuthoritative &&
-      typeof options.maxAuthoritativeCacheAgeMs === 'number' &&
-      authoritativeCacheAgeMs !== null &&
-      Number.isFinite(authoritativeCacheAgeMs) &&
-      authoritativeCacheAgeMs > options.maxAuthoritativeCacheAgeMs
-    );
-
     if (cached.updatedAt) {
       searchMeta.cacheUpdatedAt = cached.updatedAt;
     }
 
-    if (canFetchAuthoritativeData && !cached.isAuthoritative) {
-      debugLog(`[Cache Upgrade] Found supplemental cache for ${safeLocation} via ${cached.cacheKey}; fetching live RadioReference data.`);
-    } else if (shouldRefreshStaleAuthoritativeCache) {
-      searchMeta.autoBypassedStaleAuthoritativeCache = true;
-      debugLog(`[Cache Refresh] Authoritative cache for ${safeLocation} is older than threshold; fetching fresh RadioReference data.`);
+    if (canFetchAuthoritativeData) {
+      debugLog(`[Cache Upgrade] Found shared AI cache for ${safeLocation} via ${cached.cacheKey}; fetching live RadioReference data.`);
     } else {
-      searchMeta.usedAuthoritativeCache = cached.isAuthoritative;
-      if (cached.isAuthoritative && cached.updatedAt) {
-        searchMeta.lastAuthoritativeRefreshAt = cached.updatedAt;
-      }
-      debugLog(`[Cache Hit] Returning cached result for ${safeLocation} via ${cached.cacheKey}.`);
+      debugLog(`[Cache Hit] Returning shared AI cache for ${safeLocation} via ${cached.cacheKey}.`);
       const filteredData = filterDataByServices(cached.data, userSelectedServices);
       return { data: filteredData, groundingChunks: cached.groundingChunks, rawText: 'Retrieved from Cache', searchMeta };
     }
@@ -518,28 +513,35 @@ export const searchFrequencies = async (locationQuery: string, userSelectedServi
   } else {
     debugLog(`[Hybrid Search] All fetches failed. Checking Cache as backup...`);
     // Fallback: Check Cache if everything else failed
-    const backupCached = options.bypassCache ? null : (cached ?? await getFromCacheCandidates(cacheKeys));
+    const backupCached = options.bypassCache ? null : (cached ?? await getFromCacheCandidates(cacheKeys, { allowAuthoritative: false }));
     if (backupCached) {
       debugLog(`[Cache Backup] Found data.`);
       // Filter and return immediately
       const filteredData = filterDataByServices(backupCached.data, userSelectedServices);
-      searchMeta.usedAuthoritativeCache = backupCached.isAuthoritative;
       return { data: filteredData, groundingChunks: backupCached.groundingChunks, rawText: "Retrieved from Cache (Offline Backup)", rrError: rrErrorMessage, searchMeta };
     }
     throw new Error("Unable to retrieve frequency data from any source.");
   }
 
   // 3. Save MASTER RECORD to Cache (Write-Through)
-  if (masterData && (masterData.agencies?.length > 0 || masterData.trunkedSystems?.length > 0)) {
-    // Validate AI-sourced data before caching (RR data is authoritative, skip)
-    if (masterData.source !== 'API') {
-      const issues = validateResult(masterData);
-      if (issues.length > 0) masterData.dataQualityWarnings = issues;
-    }
-    // Annotate talkgroup types before caching so cache also has them
+  if (masterData && masterData.source !== 'API') {
+    const issues = validateResult(masterData);
+    if (issues.length > 0) masterData.dataQualityWarnings = issues;
+  }
+  if (masterData) {
     annotateTalkgroups(masterData);
-    debugLog(`[Cache Save] Storing Master Record for ${cacheKeys.length} equivalent keys (primary ${cacheKey})`);
-    await Promise.all(cacheKeys.map((key) => saveToCache(key, masterData, masterGrounding)));
+  }
+
+  const sharedCacheData = buildSharedCacheRecord(masterData?.source === 'API' ? aiResult : masterData);
+  if (sharedCacheData && (sharedCacheData.agencies?.length > 0 || sharedCacheData.trunkedSystems?.length > 0)) {
+    const issues = validateResult(sharedCacheData);
+    if (issues.length > 0) sharedCacheData.dataQualityWarnings = issues;
+    // Annotate talkgroup types before caching so cache also has them
+    annotateTalkgroups(sharedCacheData);
+    debugLog(`[Cache Save] Storing shared AI cache for ${cacheKeys.length} equivalent keys (primary ${cacheKey})`);
+    await Promise.all(cacheKeys.map((key) => saveToCache(key, sharedCacheData, aiGrounding ?? masterGrounding)));
+  } else if (masterData?.source === 'API') {
+    debugLog(`[Cache Save] Skipping shared cache write for live RadioReference data.`);
   }
 
   // 4. Return FILTERED data to user

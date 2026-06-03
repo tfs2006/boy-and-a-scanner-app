@@ -244,7 +244,7 @@ describe('geminiService hybrid flows', () => {
     expect(fetchFromRadioReference).toHaveBeenCalledWith('84770', { username: 'demo', password: 'secret' }, expect.any(Array), undefined);
   });
 
-  it('reuses authoritative RR cache immediately even when RR credentials are present', async () => {
+  it('ignores shared authoritative RR cache and fetches fresh data when RR credentials are present', async () => {
     const cachedRrResult = structuredClone(rrResult);
     const single = vi.fn((key: string) => Promise.resolve({
       data: key === 'v7_loc_county_washington_ut'
@@ -257,7 +257,67 @@ describe('geminiService hybrid flows', () => {
     }));
     const eq = vi.fn((_: string, key: string) => ({ maybeSingle: () => single(key) }));
     const select = vi.fn().mockReturnValue({ eq });
-    const from = vi.fn().mockReturnValue({ select });
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn().mockReturnValue({ select, upsert });
+
+    vi.doMock('../services/supabaseClient', () => ({ supabase: { from } }));
+    vi.doMock('../services/rrApi', () => ({
+      fetchFromRadioReference: vi.fn().mockResolvedValue(structuredClone(rrResult)),
+    }));
+    vi.doMock('../services/locationService', () => ({
+      resolveLocationDetails: vi.fn().mockResolvedValue({
+        type: 'city',
+        standardizedName: 'St George, UT',
+        canonicalName: 'Washington County, UT',
+        canonicalKey: 'v7_loc_county_washington_ut',
+        searchLabel: 'St George, UT | Washington County, UT | ZIP 84770',
+        isZip: false,
+        primaryZip: '84770',
+        city: 'St George',
+        county: 'Washington',
+        stateCode: 'UT',
+        zips: ['84770'],
+        aliases: ['St George, UT', 'Washington County, UT', '84770'],
+      }),
+      createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_washington_ut', 'v6_loc_st.george,ut', 'v6_loc_84770']),
+    }));
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: structuredClone(aiResult),
+        groundingChunks: [{ web: { uri: 'https://example.com/live-ai', title: 'Live AI' } }],
+        rawText: 'AI Results',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { searchFrequencies } = await import('../services/geminiService');
+    const response = await searchFrequencies('St. George, UT', ['Police'], { username: 'demo', password: 'secret' });
+
+    expect(response.data?.source).toBe('API');
+    expect(response.searchMeta?.usedAuthoritativeCache).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const fetchFromRadioReference = (await import('../services/rrApi')).fetchFromRadioReference as unknown as ReturnType<typeof vi.fn>;
+    expect(fetchFromRadioReference).toHaveBeenCalledWith('84770', { username: 'demo', password: 'secret' }, expect.any(Array), undefined);
+  });
+
+  it('ignores shared authoritative RR cache when RR credentials are absent', async () => {
+    const cachedRrResult = structuredClone(rrResult);
+    const single = vi.fn((key: string) => Promise.resolve({
+      data: key === 'v7_loc_county_washington_ut'
+        ? {
+            result_data: cachedRrResult,
+            grounding_chunks: [{ web: { uri: 'https://example.com/rr-cache', title: 'RR Cache' } }],
+          }
+        : null,
+      error: key === 'v7_loc_county_washington_ut' ? null : { message: 'Not found' },
+    }));
+    const eq = vi.fn((_: string, key: string) => ({ maybeSingle: () => single(key) }));
+    const select = vi.fn().mockReturnValue({ eq });
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const from = vi.fn().mockReturnValue({ select, upsert });
 
     vi.doMock('../services/supabaseClient', () => ({ supabase: { from } }));
     vi.doMock('../services/rrApi', () => ({
@@ -281,15 +341,21 @@ describe('geminiService hybrid flows', () => {
       createLocationCacheKeys: vi.fn().mockReturnValue(['v7_loc_county_washington_ut', 'v6_loc_st.george,ut', 'v6_loc_84770']),
     }));
 
-    const fetchMock = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: structuredClone(aiResult),
+        groundingChunks: [{ web: { uri: 'https://example.com/live-ai', title: 'Live AI' } }],
+        rawText: 'AI Results',
+      }),
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     const { searchFrequencies } = await import('../services/geminiService');
-    const response = await searchFrequencies('St. George, UT', ['Police'], { username: 'demo', password: 'secret' });
+    const response = await searchFrequencies('St. George, UT', ['Police']);
 
-    expect(response.data?.source).toBe('API');
-    expect(response.searchMeta?.usedAuthoritativeCache).toBe(true);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.data?.source).toBe('AI');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     const fetchFromRadioReference = (await import('../services/rrApi')).fetchFromRadioReference as unknown as ReturnType<typeof vi.fn>;
     expect(fetchFromRadioReference).not.toHaveBeenCalled();
@@ -351,7 +417,7 @@ describe('geminiService hybrid flows', () => {
     expect(fetchFromRadioReference).toHaveBeenCalledWith('84770', { username: 'demo', password: 'secret' }, expect.any(Array), undefined);
   });
 
-  it('writes refreshed results through to all equivalent cache keys', async () => {
+  it('writes only AI-safe shared cache entries through to all equivalent cache keys', async () => {
     const maybeSingle = vi.fn().mockResolvedValue({ data: null, error: { message: 'Not found' } });
     const eq = vi.fn().mockReturnValue({ maybeSingle });
     const select = vi.fn().mockReturnValue({ eq });
@@ -403,9 +469,10 @@ describe('geminiService hybrid flows', () => {
     expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ search_key: 'v7_loc_county_washington_ut' }), { onConflict: 'search_key' });
     expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ search_key: 'v7_loc_city_st_george_ut' }), { onConflict: 'search_key' });
     expect(upsert).toHaveBeenCalledWith(expect.objectContaining({ search_key: 'v7_loc_zip_84770' }), { onConflict: 'search_key' });
+    expect(upsert.mock.calls.every(([payload]) => payload.result_data?.source === 'AI')).toBe(true);
   });
 
-  it('automatically refreshes authoritative RR cache when it is older than the configured threshold', async () => {
+  it('does not reuse shared authoritative RR cache even when a refresh threshold is provided', async () => {
     const single = vi.fn().mockResolvedValue({
       data: {
         result_data: structuredClone(rrResult),
@@ -455,8 +522,9 @@ describe('geminiService hybrid flows', () => {
     const response = await searchFrequencies('St. George, UT', ['Police'], { username: 'demo', password: 'secret' }, undefined, { maxAuthoritativeCacheAgeMs: 60_000 });
 
     expect(response.data?.source).toBe('API');
-    expect(response.searchMeta?.autoBypassedStaleAuthoritativeCache).toBe(true);
+    expect(response.searchMeta?.autoBypassedStaleAuthoritativeCache).toBeUndefined();
     expect(response.searchMeta?.lastAuthoritativeRefreshAt).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     const fetchFromRadioReference = (await import('../services/rrApi')).fetchFromRadioReference as unknown as ReturnType<typeof vi.fn>;
     expect(fetchFromRadioReference).toHaveBeenCalledWith('84770', { username: 'demo', password: 'secret' }, expect.any(Array), undefined);

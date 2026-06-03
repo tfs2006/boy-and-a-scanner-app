@@ -72,10 +72,6 @@ type StatusNotice = {
   detail?: string;
 };
 
-const RR_AUTO_REFRESH_ENABLED_KEY = 'rr_auto_refresh_enabled';
-const RR_AUTO_REFRESH_MINUTES_KEY = 'rr_auto_refresh_minutes';
-const RR_AUTO_REFRESH_MINUTE_OPTIONS = [15, 30, 60, 180];
-
 function formatRelativeTimestamp(value: string): string {
   const target = Date.parse(value);
   if (!Number.isFinite(target)) return 'time unknown';
@@ -365,11 +361,6 @@ function App() {
   const [rrUsername, setRrUsername] = useState(() => sessionStorage.getItem('rr_username') || localStorage.getItem('rr_username') || '');
   const [rrPassword, setRrPassword] = useState(() => sessionStorage.getItem('rr_password') || localStorage.getItem('rr_password') || '');
   const [showRRPassword, setShowRRPassword] = useState(false);
-  const [rrAutoRefreshEnabled, setRrAutoRefreshEnabled] = useState(() => localStorage.getItem(RR_AUTO_REFRESH_ENABLED_KEY) !== '0');
-  const [rrAutoRefreshMinutes, setRrAutoRefreshMinutes] = useState(() => {
-    const stored = Number.parseInt(localStorage.getItem(RR_AUTO_REFRESH_MINUTES_KEY) || '60', 10);
-    return RR_AUTO_REFRESH_MINUTE_OPTIONS.includes(stored) ? stored : 60;
-  });
   const rrCredentials: RRCredentials | undefined = (rrUsername && rrPassword) ? { username: rrUsername, password: rrPassword } : undefined;
 
   useEffect(() => {
@@ -385,21 +376,9 @@ function App() {
     }
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem(RR_AUTO_REFRESH_ENABLED_KEY, rrAutoRefreshEnabled ? '1' : '0');
-  }, [rrAutoRefreshEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem(RR_AUTO_REFRESH_MINUTES_KEY, String(rrAutoRefreshMinutes));
-  }, [rrAutoRefreshMinutes]);
-
   const buildSearchOptions = (options?: { bypassCache?: boolean }) => {
     if (options?.bypassCache) {
       return { bypassCache: true };
-    }
-
-    if (rrCredentials && rrAutoRefreshEnabled) {
-      return { maxAuthoritativeCacheAgeMs: rrAutoRefreshMinutes * 60_000 };
     }
 
     return undefined;
@@ -905,13 +884,7 @@ function App() {
 
         // Refresh user stats
         getMyStats().then(s => { if (s) setUserStats(s); }).catch(() => {});
-        if (response.searchMeta?.autoBypassedStaleAuthoritativeCache) {
-          pushStatusNotice({
-            tone: 'info',
-            message: 'Older RadioReference cache was refreshed automatically.',
-            detail: `Because the last authoritative lookup was older than ${rrAutoRefreshMinutes} minute${rrAutoRefreshMinutes === 1 ? '' : 's'}, the app ran a fresh RR check.`,
-          });
-        } else if (options?.bypassCache && rrCredentials) {
+        if (options?.bypassCache && rrCredentials) {
           pushStatusNotice({
             tone: response.data.source === 'API' ? 'success' : 'info',
             message: response.data.source === 'API' ? 'Live RadioReference recheck complete.' : 'Live recheck complete.',
@@ -1022,7 +995,7 @@ function App() {
               title={new Date(meta.lastAuthoritativeRefreshAt).toLocaleString()}
             >
               <Timer className="w-4 h-4" />
-              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">RR Refreshed {formatRelativeTimestamp(meta.lastAuthoritativeRefreshAt)}</span>
+              <span className="text-xs font-mono-tech font-bold uppercase tracking-wider">RR Checked {formatRelativeTimestamp(meta.lastAuthoritativeRefreshAt)}</span>
             </div>
           )}
           {searchTime > 0 && (
@@ -1518,43 +1491,18 @@ function App() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-mono-tech uppercase tracking-wider text-cyan-300">Cache Freshness</div>
-                    <p className="mt-1 text-xs text-slate-400 leading-relaxed">
-                      Automatically recheck RadioReference when cached RR-backed results are older than the selected threshold.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setRrAutoRefreshEnabled((current) => !current)}
-                    className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-mono-tech font-bold uppercase tracking-wider transition-colors ${rrAutoRefreshEnabled ? 'border-cyan-500/50 bg-cyan-900/30 text-cyan-300' : 'border-slate-700 bg-slate-900 text-slate-500'}`}
-                  >
-                    {rrAutoRefreshEnabled ? 'Auto Refresh On' : 'Auto Refresh Off'}
-                  </button>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] text-slate-500 font-mono-tech mb-1 uppercase tracking-wider">Refresh RR cache older than</label>
-                  <select
-                    value={rrAutoRefreshMinutes}
-                    onChange={(event) => setRrAutoRefreshMinutes(Number.parseInt(event.target.value, 10))}
-                    disabled={!rrAutoRefreshEnabled}
-                    className="w-full bg-[#1e293b] border border-slate-700 rounded px-3 py-2 text-white font-mono-tech text-sm focus:border-cyan-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {RR_AUTO_REFRESH_MINUTE_OPTIONS.map((minutes) => (
-                      <option key={minutes} value={minutes}>{minutes} minutes</option>
-                    ))}
-                  </select>
-                </div>
+              <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 space-y-2">
+                <div className="text-xs font-mono-tech uppercase tracking-wider text-cyan-300">Live-Only RR Access</div>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  RadioReference-backed results are fetched only for your current search and are not written into the shared app cache or reused for other users.
+                </p>
               </div>
             </div>
 
             <div className="mt-4 p-3 bg-slate-950 rounded border border-slate-800">
               <p className="text-[11px] text-slate-500 font-mono-tech leading-relaxed">
                 <span className="text-amber-400">NOTE:</span> A <a href="https://www.radioreference.com/apps/subscription/" target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:underline">RadioReference Premium subscription</a> is required.
-                Your app key is securely stored on the server. ZIP code searches will use the RR database directly; other searches fall back to AI.
+                Your app key is securely stored on the server. ZIP code searches use the RR database live for your active session; RR-backed results are not shared into the app cache.
               </p>
             </div>
 
