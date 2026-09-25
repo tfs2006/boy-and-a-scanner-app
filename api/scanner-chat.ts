@@ -34,6 +34,41 @@ IMPORTANT RULES:
 
 REMEMBER: Always respond with ONLY the JSON code block. Never add explanations, apologies, or any other text.`;
 
+function extractJsonObject(text: string): any | null {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return null;
+
+  const fenced = trimmed.match(/```json\s*([\s\S]*?)\s*```/i);
+  if (fenced?.[1]) {
+    try {
+      return JSON.parse(fenced[1]);
+    } catch {
+      // fall through
+    }
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf('{');
+    const end = trimmed.lastIndexOf('}');
+    if (start !== -1 && end > start) {
+      try {
+        return JSON.parse(trimmed.slice(start, end + 1));
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
+function isNoDataErrorPayload(payload: any): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+  const msg = String((payload as any).error || '').toLowerCase();
+  return msg.includes('no data found');
+}
+
 function sanitizeMessage(input: unknown): { role: 'user' | 'assistant'; content: string } | null {
   if (!input || typeof input !== 'object') return null;
   const rawRole = (input as any).role;
@@ -84,13 +119,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const prompt = `${SYSTEM_PROMPT}\n\nConversation:\n${transcript}`;
 
-    const aiMeta = await generateAppAiContent({
+    let aiMeta = await generateAppAiContent({
       prompt,
       timeoutMs: MODEL_TIMEOUT_MS,
       allowSearchTools: true,
     });
 
-    const content = aiMeta.text || '{}';
+    let content = aiMeta.text || '{}';
+
+    const parsed = extractJsonObject(content);
+    if (isNoDataErrorPayload(parsed)) {
+      const fallbackPrompt = `${SYSTEM_PROMPT}
+
+Conversation:
+${transcript}
+
+The previous attempt returned {"error":"No data found for that location/system"}.
+Retry with this fallback rule:
+- If exact named network details are not available, return a practical starter channel set for the requested band/system in that area.
+- For HAM 2m requests, include at least the national calling/simplex channel and any widely-used local 2m repeater/control frequencies you can confidently provide.
+- Do not return an error object unless the request is unrelated to scanner channel programming.`;
+
+      aiMeta = await generateAppAiContent({
+        prompt: fallbackPrompt,
+        timeoutMs: MODEL_TIMEOUT_MS,
+        allowSearchTools: true,
+      });
+      content = aiMeta.text || '{}';
+    }
 
     return res.status(200).json({
       content,
