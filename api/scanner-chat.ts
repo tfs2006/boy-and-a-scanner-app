@@ -19,7 +19,9 @@ WHEN THE USER REQUESTS RADIO SYSTEMS OR CHANNELS:
       "name": "Channel description",
       "freq": "155.4750",
       "mode": "NFM" | "FM" | "AM" | "AUTO",
-      "tone": "None" | "CTCSS 100.0" | "DCS 143" | "Search"
+      "tone": "None" | "CTCSS 100.0" | "DCS 143" | "Search",
+      "serviceType": 1,
+      "serviceTag": "Law Dispatch"
     }
   ]
 }
@@ -28,6 +30,9 @@ IMPORTANT RULES:
 - Frequencies MUST be strings in MHz format (e.g., "155.4750", "462.5625", "854.5125")
 - Valid modes: NFM, FM, AM, AUTO
 - Valid tones: "None", "Search", "CTCSS XXX.X", "DCS XXX" (use actual values)
+- Include service type metadata for each channel:
+  - serviceType = numeric RadioReference-like category id (1-255)
+  - serviceTag = human label (Law Dispatch, Fire Dispatch, EMS Dispatch, Ham, Railroad, Air, Marine, etc.)
 - For DMR/P25, use the control channel frequency
 - If you truly cannot find data, return: {"error": "No data found for that location/system"}
 - NEVER invent frequencies - if uncertain, use "error" field
