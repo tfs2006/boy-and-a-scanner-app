@@ -26,6 +26,7 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
 | **EXPLORE** | Interactive US map of all cloud-cached locations; tap any marker to browse frequencies instantly |
 | **RANKS** | Community leaderboard — earn points by confirming active frequencies with "Heard It" |
 | **COMMUNITY** | ScannerSphere hub with forum posts, events calendar, and tutorials |
+| **SCANNER** | Launches the standalone Uniden programming companion app in a separate tab |
 
 ### Hybrid Data Sources
 - **RadioReference SOAP API** — Live authoritative ZIP code lookups for the current user's search session (requires RR Premium account)
@@ -161,6 +162,7 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
    GEMINI_API_KEY=your_gemini_api_key
    VITE_SUPABASE_URL=https://your-project.supabase.co
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+   VITE_SCANNER_COMPANION_URL=https://your-scanner-companion-domain
    ```
 
    Notes:
@@ -208,7 +210,14 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
 | `OPENROUTER_APP_NAME` | Server-side only | Optional OpenRouter app title header |
 | `VITE_SUPABASE_URL` | Browser | Supabase project URL |
 | `VITE_SUPABASE_ANON_KEY` | Browser | Supabase public anon key |
+| `VITE_SCANNER_COMPANION_URL` | Browser | Optional URL for the standalone scanner companion launch button |
 | `RR_APP_KEY` | Server-side only | RadioReference app key |
+
+### Scanner companion integration (safe mode)
+
+- The Scanner tab is intentionally isolated: it opens the companion app in a new tab instead of merging code into the main shell.
+- New endpoint `POST /api/scanner-chat` reuses existing app AI provider logic from `api/appAiProvider.ts`, so it uses the same server-side key path as the rest of the app.
+- Keep keys server-side only; do not expose provider keys in the companion frontend.
 
 The app can now run through direct Gemini or OpenRouter, while the Oracle precacher keeps its own separate environment and provider settings for AI/SEO work only.
 

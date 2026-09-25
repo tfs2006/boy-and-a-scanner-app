@@ -38,6 +38,7 @@ const ContributeModal = lazy(async () => ({ default: (await import('./components
 const ExploreMap = lazy(async () => ({ default: (await import('./components/ExploreMap')).ExploreMap }));
 const ProfileModal = lazy(async () => ({ default: (await import('./components/ProfileModal')).ProfileModal }));
 const CommunityHub = lazy(async () => ({ default: (await import('./components/CommunityHub')).CommunityHub }));
+const ScannerCompanion = lazy(async () => ({ default: (await import('./components/ScannerCompanion')).ScannerCompanion }));
 
 const SDS100_FILTER_OPTIONS: Array<{ key: SystemFilterKey; label: string; sublabel: string }> = [
   { key: 'analog', label: 'Analog', sublabel: 'FM / AM' },
@@ -191,7 +192,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const sessionUserId = session?.user.id ?? null;
 
-  const [mode, setMode] = useState<'scan' | 'trip' | 'leaderboard' | 'explore' | 'community'>('scan');
+  const [mode, setMode] = useState<'scan' | 'trip' | 'leaderboard' | 'explore' | 'community' | 'scanner'>('scan');
 
   // Crowdsource / Contribute Modal
   const [showContribute, setShowContribute] = useState(false);
@@ -1221,6 +1222,12 @@ function App() {
                 >
                   <Users className="w-3 h-3" /> <span className="hidden lg:inline">COMMUNITY</span>
                 </button>
+                <button
+                  onClick={() => setMode('scanner')}
+                  className={`px-2.5 lg:px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-1.5 ${mode === 'scanner' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                >
+                  <Radio className="w-3 h-3" /> <span className="hidden lg:inline">SCANNER</span>
+                </button>
               </div>
 
               {/* Settings + Sign Out */}
@@ -1305,6 +1312,7 @@ function App() {
                   { key: 'explore',     label: 'EXPLORE',   Icon: Globe,       color: 'text-cyan-400',   active: 'bg-cyan-700/20 border-cyan-700/40' },
                   { key: 'leaderboard', label: 'RANKS',     Icon: Trophy,      color: 'text-yellow-400', active: 'bg-yellow-600/20 border-yellow-600/40' },
                   { key: 'community',   label: 'COMMUNITY', Icon: Users,       color: 'text-blue-400',   active: 'bg-blue-600/20 border-blue-600/40' },
+                  { key: 'scanner',     label: 'SCANNER',   Icon: Radio,       color: 'text-violet-400', active: 'bg-violet-600/20 border-violet-600/40' },
                 ] as const).map(({ key, label, Icon, color, active }) => (
                   <button
                     key={key}
@@ -1431,6 +1439,14 @@ function App() {
             <Users className="w-5 h-5" />
             <span className="text-[10px] font-mono-tech font-bold uppercase tracking-wider">COMMUNITY</span>
           </button>
+          <button
+            onClick={() => setMode('scanner')}
+            className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 transition-colors ${mode === 'scanner' ? 'text-violet-400' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            {mode === 'scanner' && <span className="tab-active-indicator bg-violet-400" />}
+            <Radio className="w-5 h-5" />
+            <span className="text-[10px] font-mono-tech font-bold uppercase tracking-wider">SCANNER</span>
+          </button>
         </div>
       </div>
 
@@ -1545,6 +1561,10 @@ function App() {
         ) : mode === 'community' ? (
           <Suspense fallback={<SectionLoader label="Loading community hub..." />}>
             <CommunityHub session={session} />
+          </Suspense>
+        ) : mode === 'scanner' ? (
+          <Suspense fallback={<SectionLoader label="Loading scanner companion..." />}>
+            <ScannerCompanion />
           </Suspense>
         ) : (
           <>

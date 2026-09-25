@@ -1,0 +1,109 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { ensureAppAiConfig, generateAppAiContent } from './appAiProvider.js';
+
+const MODEL_TIMEOUT_MS = 40_000;
+
+const SYSTEM_PROMPT = `You are ScanPilot, the expert radio scanner programmer. Your ONLY job is to help users program their Uniden SDS100/SDS150/SDS200 scanners by providing structured channel data.
+
+WHEN THE USER REQUESTS RADIO SYSTEMS OR CHANNELS:
+- Identify the location and system type (DMR, P25, analog, etc.)
+- Return a VALID JSON object ONLY, wrapped in triple backticks with "json" tag like: \`\`\`json { ... } \`\`\`
+- NEVER add any other text, explanations, or markdown outside the code block
+- The JSON MUST have this exact structure:
+{
+  "type": "DMR" | "P25" | "Analog" | "NXDN" | "Mixed",
+  "location": "City, State",
+  "systemName": "System/Network Name",
+  "channels": [
+    {
+      "name": "Channel description",
+      "freq": "155.4750",
+      "mode": "NFM" | "FM" | "AM" | "AUTO",
+      "tone": "None" | "CTCSS 100.0" | "DCS 143" | "Search"
+    }
+  ]
+}
+
+IMPORTANT RULES:
+- Frequencies MUST be strings in MHz format (e.g., "155.4750", "462.5625", "854.5125")
+- Valid modes: NFM, FM, AM, AUTO
+- Valid tones: "None", "Search", "CTCSS XXX.X", "DCS XXX" (use actual values)
+- For DMR/P25, use the control channel frequency
+- If you truly cannot find data, return: {"error": "No data found for that location/system"}
+- NEVER invent frequencies - if uncertain, use "error" field
+
+REMEMBER: Always respond with ONLY the JSON code block. Never add explanations, apologies, or any other text.`;
+
+function sanitizeMessage(input: unknown): { role: 'user' | 'assistant'; content: string } | null {
+  if (!input || typeof input !== 'object') return null;
+  const rawRole = (input as any).role;
+  const role: 'user' | 'assistant' = rawRole === 'assistant' ? 'assistant' : 'user';
+  const content = String((input as any).content || '').slice(0, 8_000).trim();
+  if (!content) return null;
+  return { role, content };
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const allowedOrigin = process.env.SCANNER_COMPANION_ORIGIN?.trim() || '*';
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    ensureAppAiConfig();
+  } catch (error: any) {
+    console.error(error?.message || 'No AI provider configured');
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+
+  try {
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const safeMessages = Array.isArray(body?.messages)
+      ? body.messages
+          .map(sanitizeMessage)
+          .filter(Boolean)
+          .slice(0, 8) as Array<{ role: 'user' | 'assistant'; content: string }>
+      : [];
+
+    if (safeMessages.length === 0) {
+      return res.status(400).json({ error: 'messages array is required' });
+    }
+
+    const transcript = safeMessages
+      .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+      .join('\n\n');
+
+    const prompt = `${SYSTEM_PROMPT}\n\nConversation:\n${transcript}`;
+
+    const aiMeta = await generateAppAiContent({
+      prompt,
+      timeoutMs: MODEL_TIMEOUT_MS,
+      allowSearchTools: true,
+    });
+
+    const content = aiMeta.text || '{}';
+
+    return res.status(200).json({
+      content,
+      aiMeta: {
+        provider: aiMeta.provider,
+        model: aiMeta.model,
+        fallbackUsed: aiMeta.fallbackUsed,
+        fallbackFrom: aiMeta.fallbackFrom,
+        usedSearchTools: aiMeta.usedSearchTools,
+      },
+    });
+  } catch (error: any) {
+    console.error('scanner-chat error:', error);
+    return res.status(500).json({ error: 'Unable to complete scanner chat request.' });
+  }
+}
