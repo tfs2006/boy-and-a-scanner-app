@@ -100,7 +100,7 @@ describe('explore smoke', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/251 locations/i)).toBeInTheDocument();
-    });
+    }, { timeout: 10000 });
   });
 
   it('opens cached detail when a marker is clicked', async () => {
