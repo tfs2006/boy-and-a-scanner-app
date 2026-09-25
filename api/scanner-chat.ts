@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ensureAppAiConfig, generateAppAiContent } from './appAiProvider.js';
 
-const MODEL_TIMEOUT_MS = 40_000;
+const MODEL_TIMEOUT_MS = 20_000;
+const FALLBACK_MODEL_TIMEOUT_MS = 12_000;
 
 const SYSTEM_PROMPT = `You are ScanPilot, the expert radio scanner programmer. Your ONLY job is to help users program their Uniden SDS100/SDS150/SDS200 scanners by providing structured channel data.
 
@@ -72,6 +73,17 @@ function isNoDataErrorPayload(payload: any): boolean {
   if (!payload || typeof payload !== 'object') return false;
   const msg = String((payload as any).error || '').toLowerCase();
   return msg.includes('no data found');
+}
+
+function normalizeJsonContent(content: string): string {
+  const parsed = extractJsonObject(content);
+  if (parsed && typeof parsed === 'object') {
+    return JSON.stringify(parsed);
+  }
+
+  return JSON.stringify({
+    error: 'AI returned an invalid response format. Please retry your request.',
+  });
 }
 
 function sanitizeMessage(input: unknown): { role: 'user' | 'assistant'; content: string } | null {
@@ -147,11 +159,13 @@ Retry with this fallback rule:
 
       aiMeta = await generateAppAiContent({
         prompt: fallbackPrompt,
-        timeoutMs: MODEL_TIMEOUT_MS,
+        timeoutMs: FALLBACK_MODEL_TIMEOUT_MS,
         allowSearchTools: true,
       });
       content = aiMeta.text || '{}';
     }
+
+    content = normalizeJsonContent(content);
 
     return res.status(200).json({
       content,
