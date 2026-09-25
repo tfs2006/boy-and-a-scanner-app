@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { ensureAppAiConfig, generateAppAiContent } from './appAiProvider.js';
 
-const MODEL_TIMEOUT_MS = 20_000;
-const FALLBACK_MODEL_TIMEOUT_MS = 12_000;
+// Keep total processing under typical proxy/function limits for downstream callers.
+const MODEL_TIMEOUT_MS = 6_500;
+const FALLBACK_MODEL_TIMEOUT_MS = 2_000;
 
 const SYSTEM_PROMPT = `You are ScanPilot, the expert radio scanner programmer. Your ONLY job is to help users program their Uniden SDS100/SDS150/SDS200 scanners by providing structured channel data.
 
@@ -157,12 +158,16 @@ Retry with this fallback rule:
 - For HAM 2m requests, include at least the national calling/simplex channel and any widely-used local 2m repeater/control frequencies you can confidently provide.
 - Do not return an error object unless the request is unrelated to scanner channel programming.`;
 
-      aiMeta = await generateAppAiContent({
-        prompt: fallbackPrompt,
-        timeoutMs: FALLBACK_MODEL_TIMEOUT_MS,
-        allowSearchTools: true,
-      });
-      content = aiMeta.text || '{}';
+      try {
+        aiMeta = await generateAppAiContent({
+          prompt: fallbackPrompt,
+          timeoutMs: FALLBACK_MODEL_TIMEOUT_MS,
+          allowSearchTools: true,
+        });
+        content = aiMeta.text || '{}';
+      } catch (fallbackError) {
+        console.warn('scanner-chat fallback attempt failed; returning original payload.', fallbackError);
+      }
     }
 
     content = normalizeJsonContent(content);
