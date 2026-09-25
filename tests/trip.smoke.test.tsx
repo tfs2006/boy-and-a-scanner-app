@@ -31,7 +31,7 @@ vi.mock('../components/FrequencyDisplay', () => ({
 
 describe('trip smoke', () => {
   beforeEach(() => {
-    localStorage.clear();
+    globalThis.localStorage?.clear?.();
   });
 
   it('submits a route and renders the trip manifest', async () => {

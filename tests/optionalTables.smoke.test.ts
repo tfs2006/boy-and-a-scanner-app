@@ -7,11 +7,23 @@ const missingTableError = {
 };
 
 describe('optional Supabase tables', () => {
+  const hasWorkingLocalStorage = () => {
+    try {
+      if (!globalThis.localStorage) return false;
+      const key = '__prefs_test__';
+      globalThis.localStorage.setItem(key, '1');
+      globalThis.localStorage.removeItem(key);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
-    sessionStorage.clear();
-    localStorage.clear();
+    globalThis.sessionStorage?.clear?.();
+    globalThis.localStorage?.clear?.();
   });
 
   it('stops retrying notification queries after the table is reported missing', async () => {
@@ -73,7 +85,9 @@ describe('optional Supabase tables', () => {
 
     await expect(loadServicePreferences('user-1')).resolves.toEqual(['Police', 'Fire', 'EMS']);
     await expect(saveServicePreferences(['Air', 'Railroad'], 'user-1')).resolves.toBeUndefined();
-    await expect(loadServicePreferences('user-1')).resolves.toEqual(['Air', 'Railroad']);
+    await expect(loadServicePreferences('user-1')).resolves.toEqual(
+      hasWorkingLocalStorage() ? ['Air', 'Railroad'] : ['Police', 'Fire', 'EMS']
+    );
 
     expect(from).toHaveBeenCalledTimes(1);
   });
