@@ -23,6 +23,17 @@ interface MapDisplayProps {
     locationName: string;
 }
 
+const TILE_SOURCES = [
+    {
+        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    },
+    {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+        attribution: 'Tiles &copy; Esri',
+    },
+];
+
 // Component to recenter map when coords change
 const RecenterMap = ({ coords }: { coords: { lat: number; lng: number } }) => {
     const map = useMap();
@@ -33,6 +44,13 @@ const RecenterMap = ({ coords }: { coords: { lat: number; lng: number } }) => {
 };
 
 export const MapDisplay: React.FC<MapDisplayProps> = ({ coords, locationName }) => {
+    const [tileSourceIndex, setTileSourceIndex] = React.useState(0);
+    const activeTileSource = TILE_SOURCES[tileSourceIndex];
+
+    const handleTileError = React.useCallback(() => {
+        setTileSourceIndex((current) => (current < TILE_SOURCES.length - 1 ? current + 1 : current));
+    }, []);
+
     if (!coords || coords.lat == null || coords.lng == null) return null;
 
     return (
@@ -44,8 +62,12 @@ export const MapDisplay: React.FC<MapDisplayProps> = ({ coords, locationName }) 
                 scrollWheelZoom={false}
             >
                 <TileLayer
-                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                    url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    key={activeTileSource.url}
+                    attribution={activeTileSource.attribution}
+                    url={activeTileSource.url}
+                    eventHandlers={{
+                        tileerror: handleTileError,
+                    }}
                 />
                 <Marker position={[coords.lat, coords.lng]}>
                     <Popup>

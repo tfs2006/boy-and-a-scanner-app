@@ -157,8 +157,8 @@ Boy & A Scanner is a full-stack web application that combines AI-assisted search
    ```env
    APP_AI_PROVIDER=openrouter
    OPENROUTER_API_KEY=your_openrouter_api_key
-   OPENROUTER_APP_MODEL=deepseek/deepseek-v4-flash:free
-   OPENROUTER_APP_FALLBACK_MODEL=deepseek/deepseek-v4-flash
+   OPENROUTER_APP_MODEL=deepseek/deepseek-v4.1-flash
+   OPENROUTER_APP_FALLBACK_MODEL=deepseek/deepseek-v4.1-flash
    GEMINI_API_KEY=your_gemini_api_key
    VITE_SUPABASE_URL=https://your-project.supabase.co
    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key

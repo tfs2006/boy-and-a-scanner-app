@@ -127,7 +127,7 @@ describe('appAiProvider', () => {
 
     process.env.APP_AI_PROVIDER = 'openrouter';
     process.env.OPENROUTER_API_KEY = 'openrouter-key';
-    process.env.OPENROUTER_APP_MODEL = 'deepseek/deepseek-v4-flash';
+    process.env.OPENROUTER_APP_MODEL = 'deepseek/deepseek-v4.1-flash';
     delete process.env.GEMINI_API_KEY;
 
     const { generateAppAiContent } = await import('../api/appAiProvider');
@@ -142,13 +142,13 @@ describe('appAiProvider', () => {
     const [, requestInit] = fetchMock.mock.calls[0];
     const payload = JSON.parse(String(requestInit?.body));
     expect(payload).toEqual(expect.objectContaining({
-      model: 'deepseek/deepseek-v4-flash',
+      model: 'deepseek/deepseek-v4.1-flash',
       temperature: 0,
       response_format: { type: 'json_object' },
     }));
     expect(payload.messages[0].content).toContain('Return only valid JSON');
     expect(result.provider).toBe('openrouter');
-    expect(result.model).toBe('deepseek/deepseek-v4-flash');
+    expect(result.model).toBe('deepseek/deepseek-v4.1-flash');
     expect(result.text).toContain('Bagdad, KY');
   });
 
@@ -184,8 +184,8 @@ describe('appAiProvider', () => {
 
     process.env.APP_AI_PROVIDER = 'openrouter';
     process.env.OPENROUTER_API_KEY = 'openrouter-key';
-    process.env.OPENROUTER_APP_MODEL = 'deepseek/deepseek-v4-flash:free';
-    process.env.OPENROUTER_APP_FALLBACK_MODEL = 'deepseek/deepseek-v4-flash';
+    process.env.OPENROUTER_APP_MODEL = 'deepseek/deepseek-v4.1-flash:free';
+    process.env.OPENROUTER_APP_FALLBACK_MODEL = 'deepseek/deepseek-v4.1-flash';
     delete process.env.GEMINI_API_KEY;
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -200,13 +200,13 @@ describe('appAiProvider', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const firstPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     const secondPayload = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
-    expect(firstPayload.model).toBe('deepseek/deepseek-v4-flash:free');
-    expect(secondPayload.model).toBe('deepseek/deepseek-v4-flash');
+    expect(firstPayload.model).toBe('deepseek/deepseek-v4.1-flash:free');
+    expect(secondPayload.model).toBe('deepseek/deepseek-v4.1-flash');
     expect(result.provider).toBe('openrouter');
-    expect(result.model).toBe('deepseek/deepseek-v4-flash');
+    expect(result.model).toBe('deepseek/deepseek-v4.1-flash');
     expect(result.fallbackUsed).toBe(true);
     expect(warnSpy).toHaveBeenCalledWith(
-      'OpenRouter model deepseek/deepseek-v4-flash:free failed. Retrying with fallback model deepseek/deepseek-v4-flash.',
+      'OpenRouter model deepseek/deepseek-v4.1-flash:free failed. Retrying with fallback model deepseek/deepseek-v4.1-flash.',
       expect.any(Error)
     );
   });
