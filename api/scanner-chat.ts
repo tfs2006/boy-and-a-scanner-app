@@ -32,6 +32,9 @@ IMPORTANT RULES:
 - Frequencies MUST be strings in MHz format (e.g., "155.4750", "462.5625", "854.5125")
 - Valid modes: NFM, FM, AM, AUTO
 - Valid tones: "None", "Search", "CTCSS XXX.X", "DCS XXX" (use actual values)
+- For DIGITAL systems (P25, DMR, NXDN), prioritize searching this source first:
+  - https://digitalfrequencysearch.com/Directory
+  - If available for the requested location, use data from that directory before other web sources.
 - Include service type metadata for each channel:
   - serviceType = numeric RadioReference-like category id (1-255)
   - serviceTag = human label (Law Dispatch, Fire Dispatch, EMS Dispatch, Ham, Railroad, Air, Marine, etc.)
