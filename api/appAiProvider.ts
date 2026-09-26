@@ -1,7 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 
 const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
-const DEFAULT_OPENROUTER_MODEL = 'google/gemini-2.5-flash';
+const DEFAULT_OPENROUTER_MODEL = 'deepseek/deepseek-v4.1-flash';
 const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_OPENROUTER_SITE_URL = 'https://www.boyandascanner.com';
 const DEFAULT_OPENROUTER_APP_NAME = 'Boy & A Scanner App';
@@ -88,7 +88,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
 }
 
 function getPreferredProvider(): AppAiProvider {
-  const raw = (process.env.APP_AI_PROVIDER || 'gemini').trim().toLowerCase();
+  const raw = (process.env.APP_AI_PROVIDER || 'openrouter').trim().toLowerCase();
   return raw === 'openrouter' ? 'openrouter' : 'gemini';
 }
 
