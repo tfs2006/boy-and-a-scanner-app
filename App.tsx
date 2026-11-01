@@ -1546,6 +1546,19 @@ function App() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 selection:bg-amber-500/30">
 
+        {/* Program My County promo banner */}
+        <a
+          href="https://pay.4ourmedia.com/b/cNiaEX0OQ2jBarI5pQ8bS0s"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block mb-6 rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-amber-400/15 via-amber-400/5 to-transparent px-5 py-4 sm:px-8 sm:py-5 text-center hover:border-amber-300 transition-colors"
+        >
+          <p className="text-[10px] sm:text-xs font-bold tracking-widest text-amber-400 uppercase">Done-for-you service</p>
+          <p className="text-lg sm:text-2xl font-extrabold text-white mt-1">Don&apos;t want to program it yourself? We&apos;ll do your county for <span className="text-amber-400">$24.95</span></p>
+          <p className="text-sm sm:text-base text-slate-300 mt-1">Your personal programming link arrives within 24 hours. SDS100, SDS150, SDS200.</p>
+          <span className="inline-block mt-3 px-6 py-2.5 rounded-xl bg-amber-500 text-slate-900 font-bold text-sm sm:text-base">Get My County Programmed</span>
+        </a>
+
         {mode === 'leaderboard' ? (
           <Suspense fallback={<SectionLoader label="Loading leaderboard..." />}>
             <Leaderboard currentUserId={session?.user?.id} />
