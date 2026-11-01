@@ -1559,6 +1559,19 @@ function App() {
           <span className="inline-block mt-3 px-6 py-2.5 rounded-xl bg-amber-500 text-slate-900 font-bold text-sm sm:text-base">Get My County Programmed</span>
         </a>
 
+        {/* Australia Program My Region promo banner */}
+        <a
+          href="https://www.boyandascanner.com/program-my-region-australia.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block mb-6 rounded-2xl border-2 border-sky-400 bg-gradient-to-r from-sky-400/15 via-sky-400/5 to-transparent px-5 py-4 sm:px-8 sm:py-5 text-center hover:border-sky-300 transition-colors"
+        >
+          <p className="text-[10px] sm:text-xs font-bold tracking-widest text-sky-400 uppercase">Australia</p>
+          <p className="text-lg sm:text-2xl font-extrabold text-white mt-1">In Australia? We&apos;ll program your region&apos;s fire and SES for <span className="text-sky-400">$15</span></p>
+          <p className="text-sm sm:text-base text-slate-300 mt-1">NSW, SA, VIC. Police is encrypted, so we only sell what you can hear. Link within 24 hours.</p>
+          <span className="inline-block mt-3 px-6 py-2.5 rounded-xl bg-sky-500 text-slate-900 font-bold text-sm sm:text-base">Get My Region Programmed</span>
+        </a>
+
         {mode === 'leaderboard' ? (
           <Suspense fallback={<SectionLoader label="Loading leaderboard..." />}>
             <Leaderboard currentUserId={session?.user?.id} />
