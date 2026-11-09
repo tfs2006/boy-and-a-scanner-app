@@ -1,7 +1,7 @@
 import React from 'react';
 import { ExternalLink, Radio, ShieldCheck } from 'lucide-react';
 
-const scannerCompanionUrl = (import.meta.env.VITE_SCANNER_COMPANION_URL as string | undefined)?.trim() || '';
+const scannerCompanionUrl = (import.meta.env.VITE_SCANNER_COMPANION_URL as string | undefined)?.trim() || 'https://uniden-scanner-programming-software.vercel.app';
 
 export function ScannerCompanion() {
   if (!scannerCompanionUrl) {

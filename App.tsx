@@ -1084,16 +1084,16 @@ function App() {
       {/* Navbar */}
       <nav className="sticky top-0 z-50 bg-[#0f172a]/95 backdrop-blur-md border-b border-slate-800 select-none print-hide">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14 sm:h-16">
+          <div className="flex items-center justify-between min-h-14 sm:min-h-16 flex-wrap gap-y-1">
 
             {/* Left: Logo */}
-            <div className="flex items-center gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 shrink-0">
               <div className="p-1.5 sm:p-2 bg-gradient-to-tr from-cyan-600 to-blue-700 rounded-lg shadow-lg shadow-blue-900/20 shrink-0">
                 <Radio className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
-              <div>
-                <h1 className="text-sm sm:text-base lg:text-xl font-bold text-white tracking-tight font-mono-tech leading-tight">BOY & A SCANNER</h1>
-                <p className="hidden sm:block text-[9px] sm:text-[10px] text-cyan-400 font-mono-tech tracking-wider uppercase">Database Access Terminal</p>
+              <div className="min-w-0">
+                <h1 className="text-sm sm:text-base lg:text-xl font-bold text-white tracking-tight font-mono-tech leading-tight whitespace-nowrap">BOY &amp; A SCANNER</h1>
+                <p className="hidden sm:block text-[9px] sm:text-[10px] text-cyan-400 font-mono-tech tracking-wider uppercase whitespace-nowrap">Database Access Terminal</p>
               </div>
             </div>
 
@@ -1226,7 +1226,7 @@ function App() {
                   onClick={() => setMode('scanner')}
                   className={`px-2.5 lg:px-3 py-1.5 rounded text-xs font-bold font-mono-tech transition-colors flex items-center gap-1.5 ${mode === 'scanner' ? 'bg-violet-600 text-white' : 'text-slate-400 hover:text-white'}`}
                 >
-                  <Radio className="w-3 h-3" /> <span className="hidden lg:inline">SCANNER</span>
+                  <Radio className="w-3 h-3" /> <span>SCANNER</span>
                 </button>
               </div>
 
@@ -1571,6 +1571,21 @@ function App() {
           <p className="text-sm sm:text-base text-slate-300 mt-1">NSW, SA, VIC. Police is encrypted, so we only sell what you can hear. Link within 24 hours.</p>
           <span className="inline-block mt-3 px-6 py-2.5 rounded-xl bg-sky-500 text-slate-900 font-bold text-sm sm:text-base">Get My Region Programmed</span>
         </a>
+
+        {/* ScanPilot — shown to signed-in users so the programming app is easy to find */}
+        {session && (
+          <a
+            href="https://uniden-scanner-programming-software.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block mb-6 rounded-2xl border-2 border-violet-400 bg-gradient-to-r from-violet-500/20 via-violet-500/5 to-transparent px-5 py-4 sm:px-8 sm:py-5 text-center hover:border-violet-300 transition-colors"
+          >
+            <p className="text-[10px] sm:text-xs font-bold tracking-widest text-violet-300 uppercase">ScanPilot — Program your scanner</p>
+            <p className="text-lg sm:text-2xl font-extrabold text-white mt-1">Program your Uniden scanner in minutes, right from your browser</p>
+            <p className="text-sm sm:text-base text-slate-300 mt-1">First county free. SDS100, SDS150, SDS200, BCD436HP, BCD536HP. No drivers, no installs.</p>
+            <span className="inline-block mt-3 px-6 py-2.5 rounded-xl bg-violet-500 text-white font-bold text-sm sm:text-base">Open ScanPilot</span>
+          </a>
+        )}
 
         {mode === 'leaderboard' ? (
           <Suspense fallback={<SectionLoader label="Loading leaderboard..." />}>
