@@ -1548,15 +1548,15 @@ function App() {
 
         {/* Program My County promo banner */}
         <a
-          href="https://pay.4ourmedia.com/b/cNiaEX0OQ2jBarI5pQ8bS0s"
+          href="https://www.boyandascanner.com/program-my-county.html"
           target="_blank"
           rel="noopener noreferrer"
           className="block mb-6 rounded-2xl border-2 border-amber-400 bg-gradient-to-r from-amber-400/15 via-amber-400/5 to-transparent px-5 py-4 sm:px-8 sm:py-5 text-center hover:border-amber-300 transition-colors"
         >
           <p className="text-[10px] sm:text-xs font-bold tracking-widest text-amber-400 uppercase">Done-for-you service</p>
           <p className="text-lg sm:text-2xl font-extrabold text-white mt-1">Don&apos;t want to program it yourself? We&apos;ll do your county for <span className="text-amber-400">$24.95</span></p>
-          <p className="text-sm sm:text-base text-slate-300 mt-1">Your personal programming link arrives within 24 hours. SDS100, SDS150, SDS200, BCD436HP, BCD536HP.</p>
-          <span className="inline-block mt-3 px-6 py-2.5 rounded-xl bg-amber-500 text-slate-900 font-bold text-sm sm:text-base">Get My County Programmed</span>
+          <p className="text-sm sm:text-base text-slate-300 mt-1">Or bundle up: 2 counties $39.95, 3 counties $54.95, 5 counties $79.95. Your personal programming link arrives within 24 hours. SDS100, SDS150, SDS200, BCD436HP, BCD536HP.</p>
+          <span className="inline-block mt-3 px-6 py-2.5 rounded-xl bg-amber-500 text-slate-900 font-bold text-sm sm:text-base">See County Packages</span>
         </a>
 
         {/* Australia Program My Region promo banner */}
